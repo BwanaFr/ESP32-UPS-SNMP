@@ -4,20 +4,8 @@
 
 static const char *TAG_UPS = "UPSHID";
 
-
-const UPSHIDDevice::InterestItems UPSHIDDevice::interrest[] = {
-    {BATTERY_SYSTEM_PAGE, REMAINING_CAPACITY_USAGE},
-    {BATTERY_SYSTEM_PAGE, AC_PRESENT_USAGE},
-    {BATTERY_SYSTEM_PAGE, CHARGING_USAGE},
-    {BATTERY_SYSTEM_PAGE, DISCHARGING_USAGE},
-    {BATTERY_SYSTEM_PAGE, BATTERY_PRESENT_USAGE},
-    {BATTERY_SYSTEM_PAGE, NEEDS_REPLACEMENT_USAGE},
-};
-
-HIDData::HIDData(uint8_t usagePage, uint8_t usage) : 
-    usagePage_(usagePage), usage_(usage), used_(false),
-    minimum_(std::numeric_limits<int32_t>::min()),
-    maximum_(std::numeric_limits<int32_t>::max()),
+HIDData::HIDData(uint8_t usagePage, uint8_t usage, const char* name) : 
+    usagePage_(usagePage), usage_(usage), name_(name), used_(false),
     reportId_(0)
 {
 }
@@ -27,31 +15,100 @@ bool HIDData::match(uint8_t usagePage, uint8_t usage)
     return (usagePage_ == usagePage) && (usage == usage_);
 }
 
-UPSHIDDevice::UPSHIDDevice()
+int32_t HIDData::getValue(const uint8_t* buffer, size_t len)
+{
+    int32_t ret = 0;
+    //TODO: Maybe we don't need to recompute this every time
+    int32_t physicalMin = 0;
+    int32_t physicalMax = 0;
+    int32_t unitExponent = 0;
+    if((!physicalMaximum_) || (!physicalMinimum_) || ((physicalMaximum_.getValue() == 0) && (physicalMinimum_.getValue() == 0))){
+        physicalMin = logicalMinimum_.getValue();
+        physicalMax = logicalMaximum_.getValue();
+    }
+    if(unitExponent_){
+        unitExponent = unitExponent_.getValue();
+    }
+    double resolution = (logicalMaximum_.getValue() - logicalMinimum_.getValue())/
+        ((physicalMax - physicalMin) * pow(10.0, unitExponent));
+
+    //TODO: Handle signed/unsigned (page 38 of HID 1.11)
+    uint8_t byteNumber = bitPlace_ / 8;
+    uint8_t startBit = bitPlace_ - (byteNumber*8);
+    uint32_t bitMask = (1<<bitWidth_)-1;
+    
+    for(int i=0;i<bitWidth_;++i){
+        ret |= ((buffer[byteNumber] >> startBit) & 0x1) << i;
+        ++startBit;
+        if(startBit >= 8){
+            startBit = 0;
+            ++byteNumber;
+        }
+    }
+    
+    ESP_LOGI(TAG_UPS, "Byte number : %u, mask : 0x%0x, resolution : %f, value: 0x%X", byteNumber, bitMask, resolution, ret);
+    return ret;
+}
+
+UPSHIDDevice::UPSHIDDevice() : 
+    datas_{
+        //List what can be interresting
+        HIDData(BATTERY_SYSTEM_PAGE, REMAINING_CAPACITY_USAGE, "Remaining Capacity"),
+        HIDData(BATTERY_SYSTEM_PAGE, AC_PRESENT_USAGE, "AC present"),
+        HIDData(BATTERY_SYSTEM_PAGE, CHARGING_USAGE, "Charging"),
+        HIDData(BATTERY_SYSTEM_PAGE, DISCHARGING_USAGE, "Discharging"),
+        HIDData(BATTERY_SYSTEM_PAGE, BATTERY_PRESENT_USAGE, "Battery present"),
+        HIDData(BATTERY_SYSTEM_PAGE, NEEDS_REPLACEMENT_USAGE, "Needs replacement"),
+        HIDData(BATTERY_SYSTEM_PAGE, RUN_TIME_TO_EMPTY_USAGE, "Run time to empty")
+    }
 {
 
 }
 
-UPSHIDDevice* UPSHIDDevice::buildFromHIDReport(const uint8_t* data, size_t dataLen)
+void UPSHIDDevice::buildFromHIDReport(const uint8_t* data, size_t dataLen)
 {
     HIDGlobalItems globalItems;
     HIDLocalItem localItems;
+    uint32_t actualBit = 0;
     for(size_t i=0;i<dataLen;++i){
         HIDReportItemPrefix prefix(data[i]);
         updateGlobalItems(globalItems, prefix, &data[i+1]);
         updateLocalItems(localItems, prefix, &data[i+1]);
-        if(prefix.bType == HIDReportItemPrefix::BTYPE::Main){
-            for(int j=0;j<sizeof(interrest)/sizeof(InterestItems);++j){
-                if(globalItems.usagePage && (interrest[j].usagePage == globalItems.usagePage.getValue()) && 
-                    localItems.usage && (localItems.usage.getValue() == interrest[j].usage)){
-                    ESP_LOGI(TAG_UPS, "Found usage 0x%02x on reportID 0x%02x", interrest[j].usage, globalItems.reportID.getValue());
+        if(prefix.bType == HIDReportItemPrefix::BTYPE::Global && prefix.bTag.globalTag == HIDReportItemPrefix::GlobalTag::ReportID){
+            actualBit = 0;
+        }else if(prefix.bType == HIDReportItemPrefix::BTYPE::Main){
+            if(prefix.bTag.mainTag == HIDReportItemPrefix::MainTag::Input){
+                for(int j=0;j<sizeof(datas_)/sizeof(HIDData);++j){
+                    if(globalItems.usagePage && localItems.usage && datas_[j].match(globalItems.usagePage.getValue(), localItems.usage.getValue()) && !datas_[j].isUsed()){                        
+                        datas_[j].setUsed(true);
+                        datas_[j].setReportId(globalItems.reportID.getValue());
+                        datas_[j].setBitsConfiguration(actualBit, globalItems.reportSize.getValue());
+                        datas_[j].setLogicalMaximum(globalItems.logicalMaximum);
+                        datas_[j].setLogicalMinimum(globalItems.logicalMinimum);
+                        datas_[j].setPhysicalMaximum(globalItems.physicalMaximum);
+                        datas_[j].setPhysicalMinimum(globalItems.physicalMinimum);
+                        datas_[j].setUnitExponent(globalItems.unitExponent);
+                        //TODO: Implement unit
+                    }
                 }
+                actualBit += globalItems.reportCount * globalItems.reportSize;
             }
             localItems.reset();
         }
+        //Advance in buffer
         i += prefix.bSize;
     }
-    return nullptr;
+}
+
+void UPSHIDDevice::hidReportData(const uint8_t* data, size_t len)
+{
+    uint8_t reportID = data[0];
+    for(int j=0;j<sizeof(datas_)/sizeof(HIDData);++j){
+        if(reportID == datas_[j].getReportId()){
+            ESP_LOGI(TAG_UPS, "Found report %s on ID 0x%02x", datas_[j].getName(), reportID);
+            int32_t value = datas_[j].getValue(&data[1], len-1);
+        }
+    }
 }
 
 void UPSHIDDevice::updateGlobalItems(HIDGlobalItems& store, const HIDReportItemPrefix& prefix, const uint8_t* data)

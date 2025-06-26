@@ -8,7 +8,7 @@
 class HIDData
 {
 public:
-    HIDData(uint8_t usagePage, uint8_t usage);
+    HIDData(uint8_t usagePage, uint8_t usage, const char* name);
     ~HIDData() = default;
 
     /**
@@ -36,26 +36,69 @@ public:
      */
     inline uint8_t getReportId() const { return reportId_; };
 
+    /**
+     * Sets bits configuration
+     * @param place Bit 0 place in the report data
+     * @param count number of bits representing data
+     */
+    inline void setBitsConfiguration(uint8_t place, uint8_t count) { bitPlace_ = place; bitWidth_ = count; };
+
+    /**
+     * Gets bits configuration
+     * @param place Bit 0 place in the report data
+     * @param count number of bits representing data
+     * TODO: Remove this and replace with a getValue
+     */
+    inline void getBitsConfiguration(uint8_t& place, uint8_t& count) { place = bitPlace_; count = bitWidth_; };
+
+    /**
+     * Gets name of the data
+     */
+    inline const char* getName() const { return name_; };
+
+    /*
+     * Gets value from the HID report buffer
+     */
+    int32_t getValue(const uint8_t* buffer, size_t len);
+
+    inline void setLogicalMinimum(const OptionalData<int32_t>& minimum){ logicalMinimum_ = minimum; };
+    inline void setLogicalMaximum(const OptionalData<int32_t>& maximum){ logicalMaximum_ = maximum; };
+    inline void setPhysicalMinimum(const OptionalData<int32_t>& minimum){ physicalMinimum_ = minimum; };
+    inline void setPhysicalMaximum(const OptionalData<int32_t>& maximum){ physicalMaximum_ = maximum; };
+
+    inline void setUnitExponent(const OptionalData<int32_t>& exponent){ unitExponent_ = exponent; };
+
 private:
     uint8_t usagePage_;
     uint8_t usage_;
-    int32_t minimum_;
-    int32_t maximum_;
     uint8_t reportId_;
+    OptionalData<int32_t> logicalMinimum_;
+    OptionalData<int32_t> logicalMaximum_;
+    OptionalData<int32_t> physicalMinimum_;
+    OptionalData<int32_t> physicalMaximum_;
+    OptionalData<int32_t> unitExponent_;
+    uint32_t bitPlace_;
+    uint32_t bitWidth_;
+    const char* name_;
     bool used_;
 };
 
 class UPSHIDDevice
 {
 public:
-
+    UPSHIDDevice();
+    virtual ~UPSHIDDevice() = default;
     /**
-     * Parse an HID report and create an UPS device
+     * Parse an HID report
      * @param data Pointer to HID report data
      * @param Lenght of the data pointer
-     * @return pointer to the UPSHIDDevice or nullptr if device is not an UPS class
      */
-    static UPSHIDDevice* buildFromHIDReport(const uint8_t* data, size_t dataLen);
+    void buildFromHIDReport(const uint8_t* data, size_t dataLen);
+
+    /**
+     * USB interrupt HID data payload callback
+     */
+    void hidReportData(const uint8_t* data, size_t len);
 
 private:
 
@@ -139,18 +182,15 @@ private:
      * Collection item meaning (6.2.2.6 of HID 1.11 spec)
      */
     enum CollectionItem : uint8_t {Physical = 0x0, Application, Logical, Report, NamedArray, UsageSwitch, UsageModifier};
-
     
-    UPSHIDDevice();
-    ~UPSHIDDevice() = default;
-
     /*Various HID constants taken from
-        Universal Serial Bus 
-        Usage Tables 
-        for                     
-        HID Power Devices
+    Universal Serial Bus 
+    Usage Tables 
+    for                     
+    HID Power Devices
     **/
     static constexpr uint8_t BATTERY_SYSTEM_PAGE = 0x85;
+
     static constexpr uint8_t REMAINING_CAPACITY_USAGE = 0x66;
     static constexpr uint8_t AC_PRESENT_USAGE = 0xd0;
     static constexpr uint8_t CHARGING_USAGE = 0x44;
@@ -158,16 +198,9 @@ private:
     static constexpr uint8_t BATTERY_PRESENT_USAGE = 0xd1;
     static constexpr uint8_t NEEDS_REPLACEMENT_USAGE = 0x4b;
     static constexpr uint8_t RUN_TIME_TO_EMPTY_USAGE = 0x68;
+    static constexpr uint8_t INTEREST_USAGES_COUNT = 7;
 
-    /**
-     * Defines what is in interest
-     */
-    struct InterestItems{
-        uint8_t usagePage;
-        uint8_t usage;
-    };
-
-    static const InterestItems interrest[];
+    HIDData datas_[INTEREST_USAGES_COUNT];
 
     static void printHIDReportItemPrefix(const HIDReportItemPrefix& item);
     static const char* mainTagToString(HIDReportItemPrefix::MainTag mainTag);

@@ -23,6 +23,7 @@ int32_t usb_input_ch[] = { 0,0,0,0, 0,0,0,0 };
 #include <inttypes.h>
 
 #include "UPSHIDDevice.hpp"
+UPSHIDDevice upsDevice;
 
 void setup()
 {
@@ -87,7 +88,7 @@ void hid_report_descriptor_cb(usb_transfer_t *transfer) {
     uint8_t *const data = (uint8_t *const)(transfer->data_buffer + USB_SETUP_PACKET_SIZE);
     size_t len = transfer->actual_num_bytes - USB_SETUP_PACKET_SIZE;
 
-    UPSHIDDevice::buildFromHIDReport(data, len);
+    upsDevice.buildFromHIDReport(data, len);
     // Serial.printf("> size: %ld bytes\n", len);
 }
 
@@ -104,8 +105,8 @@ void hid_report_cb(usb_transfer_t *transfer) {
         // for (int b=0; b<8; b++) Serial.printf("%d", (data[i] & (1 << b)) >> b );
         // Serial.printf(" ");
     }
-    Serial.printf("\n");
-
+    Serial.printf("\n\t");
+    upsDevice.hidReportData(data, transfer->actual_num_bytes);
     // usb_input_ch[0] = data[0];
     // usb_input_ch[1] = data[1];
     // usb_input_ch[2] = data[2];
