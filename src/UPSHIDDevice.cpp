@@ -46,7 +46,7 @@ int32_t HIDData::getValue(const uint8_t* buffer, size_t len)
         }
     }
     
-    ESP_LOGI(TAG_UPS, "Byte number : %u, mask : 0x%0x, resolution : %f, value: 0x%X", byteNumber, bitMask, resolution, ret);
+    ESP_LOGI(TAG_UPS, "%s Byte number : %u, mask : 0x%0x, resolution : %f, value: 0x%X", name_, byteNumber, bitMask, resolution, ret);
     return ret;
 }
 
@@ -103,9 +103,9 @@ void UPSHIDDevice::buildFromHIDReport(const uint8_t* data, size_t dataLen)
 void UPSHIDDevice::hidReportData(const uint8_t* data, size_t len)
 {
     uint8_t reportID = data[0];
+    //Got trough interresting data to check if the Id report match
     for(int j=0;j<sizeof(datas_)/sizeof(HIDData);++j){
         if(reportID == datas_[j].getReportId()){
-            ESP_LOGI(TAG_UPS, "Found report %s on ID 0x%02x", datas_[j].getName(), reportID);
             int32_t value = datas_[j].getValue(&data[1], len-1);
         }
     }

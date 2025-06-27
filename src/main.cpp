@@ -98,14 +98,14 @@ void hid_report_cb(usb_transfer_t *transfer) {
     //
     uint8_t *data = (uint8_t *)(transfer->data_buffer);
 
-    Serial.println("hid_report_cb");
-    for (int i=0; i<transfer->actual_num_bytes && i<11; i++) {
-        // Serial.printf("%d ", data[i]);
-        Serial.printf("%02X ", data[i]);
-        // for (int b=0; b<8; b++) Serial.printf("%d", (data[i] & (1 << b)) >> b );
-        // Serial.printf(" ");
-    }
-    Serial.printf("\n\t");
+    // Serial.println("hid_report_cb");
+    // for (int i=0; i<transfer->actual_num_bytes && i<11; i++) {
+    //     // Serial.printf("%d ", data[i]);
+    //     Serial.printf("%02X ", data[i]);
+    //     // for (int b=0; b<8; b++) Serial.printf("%d", (data[i] & (1 << b)) >> b );
+    //     // Serial.printf(" ");
+    // }
+    // Serial.printf("\n\t");
     upsDevice.hidReportData(data, transfer->actual_num_bytes);
     // usb_input_ch[0] = data[0];
     // usb_input_ch[1] = data[1];
