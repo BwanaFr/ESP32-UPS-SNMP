@@ -1,5 +1,18 @@
 #include <Arduino.h>
 
+#include <ETH.h>
+#include <SPI.h>
+#include <Webserver.hpp>
+#include <WiFi.h>
+
+//Pins defs for W5500 chip
+#define ETH_MOSI_PIN 11
+#define ETH_MISO_PIN 12
+#define ETH_SCLK_PIN 13
+#define ETH_CS_PIN 14
+#define ETH_INT_PIN 10
+#define ETH_RST_PIN 9
+
 #ifdef RGB_LED_PIN
 #include <UserLed.hpp>
 static UserLed userLed;
@@ -15,6 +28,8 @@ void config_desc_cb(const usb_config_desc_t *config_desc);
 void device_info_cb(usb_device_info_t *dev_info);
 void hid_report_descriptor_cb(usb_transfer_t *transfer);
 void hid_report_cb(usb_transfer_t *transfer);
+void device_removed_cb();
+
 UsbHostHidBridge hidBridge;
 int32_t usb_input_ch[] = { 0,0,0,0, 0,0,0,0 };
 
@@ -25,9 +40,57 @@ int32_t usb_input_ch[] = { 0,0,0,0, 0,0,0,0 };
 #include "UPSHIDDevice.hpp"
 UPSHIDDevice upsDevice;
 
+
+void WiFiEvent(arduino_event_id_t event)
+{
+    switch (event) {
+    case ARDUINO_EVENT_ETH_START:
+        Serial.println("ETH Started");
+        //set eth hostname here
+        ETH.setHostname("esp32-ethernet");
+        break;
+    case ARDUINO_EVENT_ETH_CONNECTED:
+        Serial.println("ETH Connected");
+        break;
+    case ARDUINO_EVENT_ETH_GOT_IP:
+        Serial.print("ETH MAC: ");
+        Serial.print(ETH.macAddress());
+        Serial.print(", IPv4: ");
+        Serial.print(ETH.localIP());
+        if (ETH.fullDuplex()) {
+            Serial.print(", FULL_DUPLEX");
+        }
+        Serial.print(", ");
+        Serial.print(ETH.linkSpeed());
+        Serial.println("Mbps");
+
+        // After connecting, start the echo service
+        Serial.println("Start web server");
+        start_webserver();
+        break;
+    case ARDUINO_EVENT_ETH_DISCONNECTED:
+        Serial.println("ETH Disconnected,Stop web server");
+        stop_webserver();
+        break;
+    case ARDUINO_EVENT_ETH_STOP:
+        Serial.println("ETH Stopped");
+        break;
+    default:
+        break;
+    }
+}
+
 void setup()
 {
     Serial.begin(115200);
+
+    WiFi.onEvent(WiFiEvent);
+    if (!ETH.begin(ETH_PHY_W5500, 1, ETH_CS_PIN, ETH_INT_PIN, ETH_RST_PIN,
+                   SPI3_HOST,
+                   ETH_SCLK_PIN, ETH_MISO_PIN, ETH_MOSI_PIN)) {
+        Serial.println("ETH start Failed!");
+    }
+
 #ifdef RGB_LED_PIN
     userLed.begin();
 #endif
@@ -35,9 +98,9 @@ void setup()
     hidBridge.onDeviceInfoReceived = device_info_cb;
     hidBridge.onHidReportDescriptorReceived = hid_report_descriptor_cb;
     hidBridge.onReportReceived = hid_report_cb;
+    hidBridge.onDeviceRemoved = device_removed_cb;
     hidBridge.begin();
 }
-
 
 void loop()
 {
@@ -58,7 +121,6 @@ void loop()
     delay(10);
 
 }
-
 
 void config_desc_cb(const usb_config_desc_t *config_desc) {
     usb_print_config_descriptor(config_desc, NULL);
@@ -120,4 +182,8 @@ void hid_report_cb(usb_transfer_t *transfer) {
     // usb_input_ch[3] = get_offset_bits(data, 32, 8);
     // for (int i=0; i<4; i++) Serial.printf("%d ", usb_input_ch[i]);
     // Serial.printf("\n");
+}
+
+void device_removed_cb() {
+    upsDevice.deviceRemoved();
 }

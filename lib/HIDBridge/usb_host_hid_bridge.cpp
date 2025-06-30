@@ -24,7 +24,6 @@
 #define ACTION_GET_CONFIG_DESC      0x08
 #define ACTION_GET_STR_DESC         0x10
 #define ACTION_CLOSE_DEV            0x20
-#define ACTION_EXIT                 0x40
 #define ACTION_CLAIM_INTF                       0x0100
 #define ACTION_TRANSFER_CTRL_GET_REPORT_DESC    0x0200
 #define ACTION_TRANSFER_INTR_GET_REPORT         0x0400
@@ -305,7 +304,7 @@ static void action_interrupt_get_report(class_driver_t *driver_obj)
     }
 }
 
-static void aciton_close_dev(class_driver_t *driver_obj)
+static void action_close_dev(class_driver_t *driver_obj)
 {
     const usb_config_desc_t *config_desc;
     ESP_ERROR_CHECK(usb_host_get_active_config_descriptor(driver_obj->dev_hdl, &config_desc));
@@ -334,6 +333,10 @@ static void aciton_close_dev(class_driver_t *driver_obj)
                     ESP_LOGI(TAG_CLASS, "\t   address: 0x%02x, EP max size: %d, dir: %s\n", ep->bEndpointAddress, ep->wMaxPacketSize, (ep->bEndpointAddress & 0x80) ? "IN" : "OUT");
                     ESP_ERROR_CHECK(usb_host_endpoint_halt(driver_obj->dev_hdl, ep->bEndpointAddress));
                     ESP_ERROR_CHECK(usb_host_endpoint_flush(driver_obj->dev_hdl, ep->bEndpointAddress));
+                    UsbHostHidBridge *bdg = (UsbHostHidBridge *)driver_obj->bdg;
+                    if (bdg->onDeviceRemoved != NULL) {
+                        bdg->onDeviceRemoved();
+                    }
                 }
             }
             ESP_ERROR_CHECK(usb_host_interface_release(driver_obj->client_hdl, driver_obj->dev_hdl, n));
@@ -343,10 +346,11 @@ static void aciton_close_dev(class_driver_t *driver_obj)
     ESP_ERROR_CHECK(usb_host_device_close(driver_obj->client_hdl, driver_obj->dev_hdl));
     driver_obj->dev_hdl = NULL;
     driver_obj->dev_addr = 0;
-    //We need to exit the event handler loop
-    driver_obj->actions &= ~ACTION_CLOSE_DEV;
-    driver_obj->actions &= ~ACTION_TRANSFER_INTR_GET_REPORT;
-    driver_obj->actions |= ACTION_EXIT;
+    
+    // driver_obj->actions &= ~ACTION_CLOSE_DEV;
+    // driver_obj->actions &= ~ACTION_TRANSFER_INTR_GET_REPORT;
+    //Reinit actions
+    driver_obj->actions = 0;
 }
 
 static void usb_class_driver_task(void *pvParameters)
@@ -401,11 +405,8 @@ static void usb_class_driver_task(void *pvParameters)
                 action_interrupt_get_report(&driver_obj);
             }
             if (driver_obj.actions & ACTION_CLOSE_DEV) {
-                aciton_close_dev(&driver_obj);
-            }
-            if (driver_obj.actions & ACTION_EXIT) {
-                break;
-            }
+                action_close_dev(&driver_obj);
+            }            
         }
         vTaskDelay(CLASS_TASK_LOOP_DELAY);
     } // end main loop
@@ -458,7 +459,8 @@ UsbHostHidBridge::UsbHostHidBridge() :
     onConfigDescriptorReceived( NULL ),
     onDeviceInfoReceived( NULL ),
     onHidReportDescriptorReceived( NULL ),
-    onReportReceived( NULL )
+    onReportReceived( NULL ),
+    onDeviceRemoved( NULL )
 {
 }
 

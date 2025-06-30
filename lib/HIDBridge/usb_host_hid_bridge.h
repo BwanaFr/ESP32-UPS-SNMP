@@ -63,6 +63,7 @@ public:
     void (*onDeviceInfoReceived)(usb_device_info_t *dev_info);
     void (*onHidReportDescriptorReceived)(usb_transfer_t *transfer);
     void (*onReportReceived)(usb_transfer_t *transfer);
+    void (*onDeviceRemoved)();
 
 protected:
 

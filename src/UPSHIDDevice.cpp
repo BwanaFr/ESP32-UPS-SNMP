@@ -5,8 +5,9 @@
 static const char *TAG_UPS = "UPSHID";
 
 HIDData::HIDData(uint8_t usagePage, uint8_t usage, const char* name) : 
-    usagePage_(usagePage), usage_(usage), name_(name), used_(false),
-    reportId_(0)
+    usagePage_(usagePage), usage_(usage), reportId_(0),
+    bitPlace_(0), bitWidth_(0), name_(name), used_(false), value_(0.0)
+    
 {
 }
     
@@ -15,7 +16,7 @@ bool HIDData::match(uint8_t usagePage, uint8_t usage)
     return (usagePage_ == usagePage) && (usage == usage_);
 }
 
-int32_t HIDData::getValue(const uint8_t* buffer, size_t len)
+void HIDData::setValue(const uint8_t* buffer, size_t len)
 {
     int32_t ret = 0;
     //TODO: Maybe we don't need to recompute this every time
@@ -46,8 +47,21 @@ int32_t HIDData::getValue(const uint8_t* buffer, size_t len)
         }
     }
     
-    ESP_LOGI(TAG_UPS, "%s Byte number : %u, mask : 0x%0x, resolution : %f, value: 0x%X", name_, byteNumber, bitMask, resolution, ret);
-    return ret;
+    // ESP_LOGI(TAG_UPS, "%s [ID: %u] Byte number : %u, mask : 0x%0x, resolution : %f, value: 0x%X", name_, reportId_, byteNumber, bitMask, resolution, ret);
+    value_ = ret;
+}
+
+void HIDData::reset()
+{
+    used_ = false;
+    reportId_ = 0;
+    logicalMinimum_.reset();
+    logicalMaximum_.reset();
+    physicalMinimum_.reset();
+    physicalMaximum_.reset();
+    unitExponent_.reset();
+    bitPlace_ = 0;
+    bitWidth_ = 0;
 }
 
 UPSHIDDevice::UPSHIDDevice() : 
@@ -60,7 +74,7 @@ UPSHIDDevice::UPSHIDDevice() :
         HIDData(BATTERY_SYSTEM_PAGE, BATTERY_PRESENT_USAGE, "Battery present"),
         HIDData(BATTERY_SYSTEM_PAGE, NEEDS_REPLACEMENT_USAGE, "Needs replacement"),
         HIDData(BATTERY_SYSTEM_PAGE, RUN_TIME_TO_EMPTY_USAGE, "Run time to empty")
-    }
+    }, connected_(false)
 {
 
 }
@@ -89,6 +103,8 @@ void UPSHIDDevice::buildFromHIDReport(const uint8_t* data, size_t dataLen)
                         datas_[j].setPhysicalMinimum(globalItems.physicalMinimum);
                         datas_[j].setUnitExponent(globalItems.unitExponent);
                         //TODO: Implement unit
+
+                        connected_ = true;
                     }
                 }
                 actualBit += globalItems.reportCount * globalItems.reportSize;
@@ -106,9 +122,47 @@ void UPSHIDDevice::hidReportData(const uint8_t* data, size_t len)
     //Got trough interresting data to check if the Id report match
     for(int j=0;j<sizeof(datas_)/sizeof(HIDData);++j){
         if(reportID == datas_[j].getReportId()){
-            int32_t value = datas_[j].getValue(&data[1], len-1);
+            datas_[j].setValue(&data[1], len-1);
         }
     }
+}
+
+void UPSHIDDevice::deviceRemoved()
+{
+    ESP_LOGI(TAG_UPS, "Device removed");
+    connected_ = false;
+    //Reset existing reports
+    for(int j=0;j<sizeof(datas_)/sizeof(HIDData);++j){
+        datas_[j].reset();
+    }
+}
+
+const HIDData& UPSHIDDevice::getRemainingCapacity() const
+{
+    return datas_[0];
+}
+
+/**
+ * Gets if AC is present
+ */
+const HIDData& UPSHIDDevice::getACPresent() const
+{
+    return datas_[1];
+}
+
+const HIDData& UPSHIDDevice::getCharging() const
+{
+    return datas_[2];
+}
+
+const HIDData& UPSHIDDevice::getDischarging() const
+{
+    return datas_[3];
+}
+
+const HIDData& UPSHIDDevice::getBatteryPresent() const
+{
+    return datas_[1];
 }
 
 void UPSHIDDevice::updateGlobalItems(HIDGlobalItems& store, const HIDReportItemPrefix& prefix, const uint8_t* data)

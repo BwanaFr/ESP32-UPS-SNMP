@@ -57,9 +57,16 @@ public:
     inline const char* getName() const { return name_; };
 
     /*
-     * Gets value from the HID report buffer
+     * Sets value from the HID report buffer
+     * @param buffer HID report buffer (without reportId)
+     * @param len Size of the report buffer (without reportId)
      */
-    int32_t getValue(const uint8_t* buffer, size_t len);
+    void setValue(const uint8_t* buffer, size_t len);
+
+    /**
+     * Gets value of the data
+     */
+    inline double getValue() { return used_ ? value_ : 0.0; }
 
     inline void setLogicalMinimum(const OptionalData<int32_t>& minimum){ logicalMinimum_ = minimum; };
     inline void setLogicalMaximum(const OptionalData<int32_t>& maximum){ logicalMaximum_ = maximum; };
@@ -67,6 +74,8 @@ public:
     inline void setPhysicalMaximum(const OptionalData<int32_t>& maximum){ physicalMaximum_ = maximum; };
 
     inline void setUnitExponent(const OptionalData<int32_t>& exponent){ unitExponent_ = exponent; };
+
+    void reset();
 
 private:
     uint8_t usagePage_;
@@ -81,6 +90,7 @@ private:
     uint32_t bitWidth_;
     const char* name_;
     bool used_;
+    double value_;
 };
 
 class UPSHIDDevice
@@ -100,6 +110,40 @@ public:
      */
     void hidReportData(const uint8_t* data, size_t len);
 
+    /**
+     * USB device removed
+     */
+    void deviceRemoved();
+
+    /**
+     * Gets remaining battery capacity
+     */
+    const HIDData& getRemainingCapacity() const;
+
+    /**
+     * Gets if AC is present
+     */
+    const HIDData& getACPresent() const;
+
+    /**
+     * Gets if battery is charging
+     */
+    const HIDData& getCharging() const;
+
+    /**
+     * Gets if battery is discharging
+     */
+    const HIDData& getDischarging() const;
+
+    /**
+     * Gets if battery is present
+     */
+    const HIDData& getBatteryPresent() const;
+
+    /**
+     * Gets if the UPS is connected
+     */
+    inline bool isConnected() const { return connected_; }
 private:
 
     /**
@@ -201,6 +245,7 @@ private:
     static constexpr uint8_t INTEREST_USAGES_COUNT = 7;
 
     HIDData datas_[INTEREST_USAGES_COUNT];
+    bool connected_;
 
     static void printHIDReportItemPrefix(const HIDReportItemPrefix& item);
     static const char* mainTagToString(HIDReportItemPrefix::MainTag mainTag);
