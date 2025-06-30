@@ -1,28 +1,56 @@
 #ifndef _UPS_WEB_SERVER_H__
 #define _UPS_WEB_SERVER_H__
 
-#include <esp_https_server.h>
+#include <esp_http_server.h>
+#include <string>
+
+class Webserver{
+public:
+    Webserver();
+    virtual ~Webserver() = default;
+
+    /**
+     * Stars the Webserver
+     */
+    void start();
+
+    /**
+     * Stops the webserver
+     */
+    void stop();
+
+    /**
+     * Setup
+     */
+    void setup();
+
+    /**
+     * Sets credentials for protected pages
+     */
+    void setCredentials(const char* userName, const char* password);
+
+    /**
+     * Creates the authentication digest
+     */
+    static void createAuthDigest(std::string& digest, const char* usernane, const char* password);
+
+private:
+    std::string authDigest_;
+    httpd_handle_t server_;
+
+    /**
+     * Checks authentication of the user
+     * @param req HTTP request
+     * @return true if authentication is success full
+     */
+    bool checkAuthentication(httpd_req_t *req);
+    
+    //HTTP handlers
+    static esp_err_t ota_get_handler( httpd_req_t *req );
+    static esp_err_t ota_post_handler( httpd_req_t *req );
 
 
-/*
- * Structure holding server handle
- * and internal socket fd in order
- * to use out of request send
- */
-struct async_resp_arg {
-    httpd_handle_t hd;
-    int fd;
 };
 
-/*
- * async send function, which we put into the httpd work queue
- */
-void ws_async_send(void *arg);
-
-esp_err_t trigger_async_send(httpd_handle_t handle, httpd_req_t *req);
-esp_err_t echo_handler(httpd_req_t *req);
-
-void start_webserver(void);
-void stop_webserver(void);
-
+extern Webserver webServer;
 #endif

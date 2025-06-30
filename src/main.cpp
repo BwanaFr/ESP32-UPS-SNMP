@@ -47,10 +47,11 @@ void WiFiEvent(arduino_event_id_t event)
     case ARDUINO_EVENT_ETH_START:
         Serial.println("ETH Started");
         //set eth hostname here
-        ETH.setHostname("esp32-ethernet");
+        ETH.setHostname("mdonze-esp32");
         break;
     case ARDUINO_EVENT_ETH_CONNECTED:
         Serial.println("ETH Connected");
+        webServer.setCredentials("TOTO", "LALA");
         break;
     case ARDUINO_EVENT_ETH_GOT_IP:
         Serial.print("ETH MAC: ");
@@ -66,11 +67,13 @@ void WiFiEvent(arduino_event_id_t event)
 
         // After connecting, start the echo service
         Serial.println("Start web server");
-        start_webserver();
+        webServer.start();
+        // start_webserver();
         break;
     case ARDUINO_EVENT_ETH_DISCONNECTED:
         Serial.println("ETH Disconnected,Stop web server");
-        stop_webserver();
+        webServer.start();
+        // stop_webserver();
         break;
     case ARDUINO_EVENT_ETH_STOP:
         Serial.println("ETH Stopped");
@@ -100,6 +103,7 @@ void setup()
     hidBridge.onReportReceived = hid_report_cb;
     hidBridge.onDeviceRemoved = device_removed_cb;
     hidBridge.begin();
+    webServer.setup();    
 }
 
 void loop()

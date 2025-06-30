@@ -1416,7 +1416,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Connector_USB:USB_A_Kycon_KUSBX-AS1N-B_Horizontal"
+		(property "Footprint" "Connector_USB:USB_A_Wuerth_614004134726_Horizontal"
 			(at 179.07 54.61 0)
 			(effects
 				(font

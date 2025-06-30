@@ -1,114 +1,237 @@
-#include <Arduino.h>
 #include <Webserver.hpp>
+#include <Arduino.h>
 #include "esp_log.h"
+#include "esp_tls_crypto.h"
+#include <esp_http_server.h>
 
-static const char *TAG_WEB = "WEB";
+const char* TAG = "Webserver";
 
-static httpd_handle_t server = NULL;
+#include <esp_flash_partitions.h>
+#include <esp_ota_ops.h>
+#include <esp_partition.h>
 
-void ws_async_send(void *arg)
+#define DEVICE_NAME "ESP32"
+#define HTTPD_401   "401 UNAUTHORIZED"           /*!< HTTP Response 401 */
+
+
+Webserver webServer;
+
+static char auth_buffer[512];
+extern const uint8_t ota_page_start[] asm("_binary_html_ota_html_start");
+extern const uint8_t ota_page_end[] asm("_binary_html_ota_html_end");
+
+//-----------------------------------------------------------------------------
+
+bool Webserver::checkAuthentication(httpd_req_t *req)
 {
-    static const char *data = "Async data";
-    struct async_resp_arg *resp_arg = (struct async_resp_arg *)arg;
-    httpd_handle_t hd = resp_arg->hd;
-    int fd = resp_arg->fd;
-    httpd_ws_frame_t ws_pkt;
-    memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
-    ws_pkt.payload = (uint8_t *)data;
-    ws_pkt.len = strlen(data);
-    ws_pkt.type = HTTPD_WS_TYPE_TEXT;
-
-    httpd_ws_send_frame_async(hd, fd, &ws_pkt);
-    free(resp_arg);
+    if(authDigest_.empty()){
+        //Always authenticated
+        return true;
+    }
+    size_t buf_len = httpd_req_get_hdr_value_len( req, "Authorization" ) + 1;
+    if ( ( buf_len > 1 ) && ( buf_len <= sizeof( auth_buffer ) ) )
+    {
+        if ( httpd_req_get_hdr_value_str( req, "Authorization", auth_buffer, buf_len ) == ESP_OK )
+        {
+            if ( !strncmp(authDigest_.c_str(), auth_buffer, buf_len ) )
+            {
+                ESP_LOGI(TAG, "Authenticated!" );                
+                return true;
+            }
+        }
+    }
+    ESP_LOGI(TAG, "Not authenticated" );
+    httpd_resp_set_status( req, HTTPD_401 );
+    httpd_resp_set_hdr( req, "Connection", "keep-alive" );
+    httpd_resp_set_hdr( req, "WWW-Authenticate", "Basic realm=\"UPS monitoring\"" );
+    httpd_resp_send( req, NULL, 0 );
+    return false;
 }
 
-esp_err_t trigger_async_send(httpd_handle_t handle, httpd_req_t *req)
+esp_err_t Webserver::ota_get_handler( httpd_req_t *req )
 {
-    struct async_resp_arg *resp_arg = (struct async_resp_arg *)malloc(sizeof(struct async_resp_arg));
-    resp_arg->hd = req->handle;
-    resp_arg->fd = httpd_req_to_sockfd(req);
-    return httpd_queue_work(handle, ws_async_send, resp_arg);
-}
+    Webserver* instance = static_cast<Webserver*>(req->user_ctx);
 
-esp_err_t echo_handler(httpd_req_t *req)
-{
-    if (req->method == HTTP_GET) {
-        ESP_LOGI(TAG_WEB, "Handshake done, the new connection was opened");
+    if(instance->checkAuthentication(req)){
+        httpd_resp_set_status( req, HTTPD_200 );
+        httpd_resp_set_hdr( req, "Connection", "keep-alive" );
+        httpd_resp_send( req, (const char*)ota_page_start, ota_page_end - ota_page_start);
         return ESP_OK;
     }
-    httpd_ws_frame_t ws_pkt;
-    uint8_t *buf = NULL;
-    memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
-    ws_pkt.type = HTTPD_WS_TYPE_TEXT;
-    /* Set max_len = 0 to get the frame len */
-    esp_err_t ret = httpd_ws_recv_frame(req, &ws_pkt, 0);
-    if (ret != ESP_OK) {
-        ESP_LOGI(TAG_WEB, "httpd_ws_recv_frame failed to get frame len with %d", ret);
-        return ret;
-    }
-     ESP_LOGI(TAG_WEB, "frame len is %d", ws_pkt.len);
-    if (ws_pkt.len) {
-        /* ws_pkt.len + 1 is for NULL termination as we are expecting a string */
-        buf = (uint8_t * )calloc(1, ws_pkt.len + 1);
-        if (buf == NULL) {
-            ESP_LOGI(TAG_WEB, "Failed to calloc memory for buf");
-            return ESP_ERR_NO_MEM;
-        }
-        ws_pkt.payload = buf;
-        /* Set max_len = ws_pkt.len to get the frame payload */
-        ret = httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len);
-        if (ret != ESP_OK) {
-            ESP_LOGI(TAG_WEB, "httpd_ws_recv_frame failed with %d", ret);
-            free(buf);
-            return ret;
-        }
-        ESP_LOGI(TAG_WEB, "Got packet with message: %s", ws_pkt.payload);
-    }
-    ESP_LOGI(TAG_WEB, "Packet type: %d", ws_pkt.type);
-    if (ws_pkt.type == HTTPD_WS_TYPE_TEXT &&
-            strcmp((char *)ws_pkt.payload, "Trigger async") == 0) {
-        free(buf);
-        return trigger_async_send(req->handle, req);
-    }
-
-    ret = httpd_ws_send_frame(req, &ws_pkt);
-    if (ret != ESP_OK) {
-        ESP_LOGI(TAG_WEB, "httpd_ws_send_frame failed with %d", ret);
-    }
-    free(buf);
-    return ret;
+    return ESP_OK;
 }
 
-static const httpd_uri_t ws = {
-    .uri        = "/ws",
-    .method     = HTTP_GET,
-    .handler    = echo_handler,
-    .user_ctx   = NULL,
-    .is_websocket = true
-};
-
-
-void start_webserver(void)
+//-----------------------------------------------------------------------------
+esp_err_t Webserver::ota_post_handler( httpd_req_t *req )
 {
-    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    Webserver* instance = static_cast<Webserver*>(req->user_ctx);
+    if(instance->checkAuthentication(req)){
 
-    // Start the httpd server
-    ESP_LOGI(TAG_WEB, "Starting server on port: '%d'", config.server_port);
-    if (httpd_start(&server, &config) == ESP_OK) {
-        // Registering the ws handler
-        ESP_LOGI(TAG_WEB, "Registering URI handlers");
-        httpd_register_uri_handler(server, &ws);
-        return;
+        char buf[256];
+        httpd_resp_set_status( req, HTTPD_500 );    // Assume failure
+
+        size_t ret, remaining = req->content_len;
+        ESP_LOGI(TAG, "Receiving");
+
+        esp_ota_handle_t update_handle = 0 ;
+        const esp_partition_t *update_partition = esp_ota_get_next_update_partition(NULL);
+        const esp_partition_t *running          = esp_ota_get_running_partition();
+        esp_err_t err = ESP_OK;
+
+        if ( update_partition == NULL )
+        {
+            ESP_LOGI(TAG, "Uh oh, bad things");
+            goto return_failure;
+        }
+
+        ESP_LOGI(TAG, "Writing partition: type %d, subtype %d, offset 0x%08x", update_partition-> type, update_partition->subtype, update_partition->address);
+        ESP_LOGI(TAG, "Running partition: type %d, subtype %d, offset 0x%08x", running->type, running->subtype, running->address);
+        err = esp_ota_begin(update_partition, OTA_WITH_SEQUENTIAL_WRITES, &update_handle);
+        if (err != ESP_OK)
+        {
+            ESP_LOGI(TAG, "esp_ota_begin failed (%s)", esp_err_to_name(err));
+            goto return_failure;
+        }
+        while ( remaining > 0 )
+        {
+            // Read the data for the request        //TODO: Review this 
+            if ( ( ret = httpd_req_recv( req, buf, std::min( remaining, (size_t)sizeof( buf ) ) ) ) <= 0 )
+            {
+                if ( ret == HTTPD_SOCK_ERR_TIMEOUT )
+                {
+                // Retry receiving if timeout occurred
+                continue;
+                }
+
+                goto return_failure;
+            }
+
+            size_t bytes_read = ret;
+
+            remaining -= bytes_read;
+            err = esp_ota_write( update_handle, buf, bytes_read);
+            if (err != ESP_OK)
+            {
+                goto return_failure;
+            }
+        }
+
+        ESP_LOGI(TAG, "Receiving done" );
+
+        // End response
+        if ( ( esp_ota_end(update_handle)                   == ESP_OK ) && 
+            ( esp_ota_set_boot_partition(update_partition) == ESP_OK ) )
+        {
+            ESP_LOGI(TAG, "OTA Success?!");
+            ESP_LOGI(TAG, "Rebooting" );
+
+            httpd_resp_set_status( req, HTTPD_200 );
+            httpd_resp_send( req, NULL, 0 );
+
+            vTaskDelay( 2000 / portTICK_RATE_MS);
+            esp_restart();
+
+            return ESP_OK;
+        }
+        ESP_LOGI(TAG, "OTA End failed (%s)!", esp_err_to_name(err));
+
+        return_failure:
+        if ( update_handle )
+        {
+            esp_ota_abort(update_handle);
+        }
+
+        httpd_resp_set_status( req, HTTPD_500 );    // Assume failure
+        httpd_resp_send( req, NULL, 0 );
     }
-    ESP_LOGI(TAG_WEB, "Error starting server!");
-    server = NULL;
+    return ESP_FAIL;
 }
 
 
-void stop_webserver(void)
+Webserver::Webserver() : server_(nullptr)
 {
-    // Stop the httpd server
-    if(server){
-        httpd_stop(server);
+}
+
+void Webserver::start()
+{
+    if(!server_){
+        httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+
+        // Start the httpd server
+        ESP_LOGI(TAG, "Starting server on port: '%d'", config.server_port);
+        if (httpd_start(&server_, &config) == ESP_OK) {
+            //Register OTA get/post
+            httpd_uri_t ota_post =
+            {
+                .uri       = "/ota",
+                .method    = HTTP_POST,
+                .handler   = ota_post_handler,
+                .user_ctx  = this
+            };
+            httpd_register_uri_handler(server_, &ota_post);
+            httpd_uri_t ota_get =
+            {
+                .uri       = "/ota",
+                .method    = HTTP_GET,
+                .handler   = ota_get_handler,
+                .user_ctx  = this,
+            };
+            httpd_register_uri_handler(server_, &ota_get);
+            return;
+        }
+        ESP_LOGI(TAG, "Error starting server!");
+        server_ = nullptr;
+    }
+}
+
+void Webserver::stop()
+{
+    if(server_){
+        httpd_stop(server_);
+        server_ = nullptr;
+    }
+}
+
+void Webserver::setup()
+{
+
+}
+
+void Webserver::setCredentials(const char* userName, const char* password)
+{
+    createAuthDigest(authDigest_, userName, password);
+}
+
+void Webserver::createAuthDigest(std::string& digest, const char* usernane, const char* password)
+{
+    digest = "";
+    if(usernane != nullptr){
+        int rc = 0;
+        char* user_info;
+        if(password != nullptr){
+            rc = asprintf(&user_info, "%s:%s", usernane, password);
+        }else{
+            rc = asprintf(&user_info, "%s:", usernane);
+        }
+        if(rc < 0){
+            ESP_LOGE(TAG, "asprintf() returned: %d", rc);
+            return;
+        }
+        if (!user_info) {
+            ESP_LOGE(TAG, "No enough memory for user information");
+            return;
+        }
+        size_t n = 0;
+        //Get len of the base64 string
+        esp_crypto_base64_encode(NULL, 0, &n, (const unsigned char *)user_info, strlen(user_info));
+        char * digestCStr = (char*)calloc(1, 6 + n + 1);
+        if(digestCStr) {
+            strcpy(digestCStr, "Basic ");
+            size_t out;
+            esp_crypto_base64_encode((unsigned char *)digestCStr + 6, n, &out, (const unsigned char *)user_info, strlen(user_info));
+            digest = digestCStr;
+            free(digestCStr);
+        }
+        free(user_info);
     }
 }

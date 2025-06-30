@@ -2,6 +2,8 @@
     "files.associations": {
         "limits": "cpp",
         "cstdint": "cpp",
-        "ostream": "c"
+        "ostream": "c",
+        "format": "cpp",
+        "thread": "cpp"
     }
 }
