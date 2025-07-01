@@ -4,6 +4,42 @@
 
 static const char *TAG_UPS = "UPSHID";
 
+UPSHIDDevice upsDevice;
+
+/**
+ * Configuration descriptor callback
+ */
+void config_desc_cb(const usb_config_desc_t *config_desc) {
+    usb_print_config_descriptor(config_desc, NULL);
+}
+
+/**
+ * Device info callback
+ */
+void device_info_cb(usb_device_info_t *dev_info) {
+    if (dev_info->str_desc_manufacturer) usb_print_string_descriptor(dev_info->str_desc_manufacturer);
+    if (dev_info->str_desc_product)      usb_print_string_descriptor(dev_info->str_desc_product);
+    if (dev_info->str_desc_serial_num)   usb_print_string_descriptor(dev_info->str_desc_serial_num);
+}
+
+void hid_report_descriptor_cb(usb_transfer_t *transfer) {
+    uint8_t *const data = (uint8_t *const)(transfer->data_buffer + USB_SETUP_PACKET_SIZE);
+    size_t len = transfer->actual_num_bytes - USB_SETUP_PACKET_SIZE;
+    upsDevice.buildFromHIDReport(data, len);
+}
+
+void hid_report_cb(usb_transfer_t *transfer) {
+    //
+    // check HID Report Descriptor for usage
+    //
+    uint8_t *data = (uint8_t *)(transfer->data_buffer);
+    upsDevice.hidReportData(data, transfer->actual_num_bytes);
+}
+
+void device_removed_cb() {
+    upsDevice.deviceRemoved();
+}
+
 HIDData::HIDData(uint8_t usagePage, uint8_t usage, const char* name) : 
     usagePage_(usagePage), usage_(usage), reportId_(0),
     bitPlace_(0), bitWidth_(0), name_(name), used_(false), value_(0.0)
@@ -47,7 +83,7 @@ void HIDData::setValue(const uint8_t* buffer, size_t len)
         }
     }
     
-    // ESP_LOGI(TAG_UPS, "%s [ID: %u] Byte number : %u, mask : 0x%0x, resolution : %f, value: 0x%X", name_, reportId_, byteNumber, bitMask, resolution, ret);
+    ESP_LOGI(TAG_UPS, "%s [ID: %u] Byte number : %u, mask : 0x%0x, resolution : %f, value: 0x%X", name_, reportId_, byteNumber, bitMask, resolution, ret);
     value_ = ret;
 }
 
@@ -76,7 +112,16 @@ UPSHIDDevice::UPSHIDDevice() :
         HIDData(BATTERY_SYSTEM_PAGE, RUN_TIME_TO_EMPTY_USAGE, "Run time to empty")
     }, connected_(false)
 {
+}
 
+void UPSHIDDevice::begin()
+{
+    hidBridge.onConfigDescriptorReceived = config_desc_cb;
+    hidBridge.onDeviceInfoReceived = device_info_cb;
+    hidBridge.onHidReportDescriptorReceived = hid_report_descriptor_cb;
+    hidBridge.onReportReceived = hid_report_cb;
+    hidBridge.onDeviceRemoved = device_removed_cb;
+    hidBridge.begin();
 }
 
 void UPSHIDDevice::buildFromHIDReport(const uint8_t* data, size_t dataLen)

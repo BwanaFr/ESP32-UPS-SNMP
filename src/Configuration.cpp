@@ -2,11 +2,15 @@
 #include "esp_log.h"
 #include <LittleFS.h>
 
+#include <ETH.h>
+#include "mbedtls/aes.h"
+#include "mbedtls/cipher.h"
+
 #define DEFAULT_TEMPERATURE_ALARM 65.0
 #define FLASH_SAVE_DELAY 1000
 #define CFG_FILENAME "/config.json"
 
-const char* CFGTAG = "Configuration";
+static const char* TAG = "Configuration";
 
 DeviceConfiguration Configuration;
 
@@ -16,12 +20,12 @@ DeviceConfiguration::DeviceConfiguration() :
 {
     mutexData_ = xSemaphoreCreateMutex();
     if(mutexData_ == NULL){
-        ESP_LOGE(CFGTAG, "Unable to create data mutex");
+        ESP_LOGE(TAG, "Unable to create data mutex");
     }
 
     mutexListeners_ = xSemaphoreCreateMutex();
     if(mutexListeners_ == NULL){
-        ESP_LOGE(CFGTAG, "Unable to create listeners mutex");
+        ESP_LOGE(TAG, "Unable to create listeners mutex");
     }
 }
 
@@ -37,10 +41,18 @@ void DeviceConfiguration::load()
         JsonDocument json;
         if(deserializeJson(json, configFile) == DeserializationError::Ok) {
             fromJSON(json);
+            //Loads credentials outside fromJSON
+            if(json["Username"]){
+                setUserName(json["Username"]);
+            }
+
+            if(json["Password"]){
+                password_ = json["Password"].as<std::string>();
+            }
             lastChange_ = 0;    //Don't write to flash
         }
         configFile.close();
-    }
+    }    
 }
 
 void DeviceConfiguration::fromJSON(const JsonDocument& doc)
@@ -223,7 +235,7 @@ void DeviceConfiguration::toJSONString(std::string& str)
     serializeJson(doc, str);
 }
 
-void DeviceConfiguration::toJSON(JsonDocument& doc)
+void DeviceConfiguration::toJSON(JsonDocument& doc, bool includeLogin)
 {
     if(xSemaphoreTake(mutexData_, portMAX_DELAY ) == pdTRUE)
     {        
@@ -231,7 +243,11 @@ void DeviceConfiguration::toJSON(JsonDocument& doc)
         doc["IP"] = ip_ == INADDR_NONE ? "DHCP" : ip_.toString();
         doc["Subnet"] = subnet_ == INADDR_NONE ? "DHCP" : subnet_.toString();
         doc["Gateway"] = subnet_ == INADDR_NONE ? "DHCP" : gateway_.toString();
-        doc["TemperatureMax"] = tempAlarm_;        
+        doc["TemperatureMax"] = tempAlarm_;
+        if(includeLogin){
+            doc["Username"] = userName_;
+            doc["Password"] = password_;
+        }
         xSemaphoreGive(mutexData_);
     }
 }
@@ -258,10 +274,129 @@ void DeviceConfiguration::notifyListeners(Parameter changed)
 
 void DeviceConfiguration::write()
 {
-    ESP_LOGI(CFGTAG, "Saving configuration to flash");
+    ESP_LOGI(TAG, "Saving configuration to flash");
     File cfgFile = LittleFS.open(CFG_FILENAME, "w");
     JsonDocument doc;
-    toJSON(doc);
+    toJSON(doc, true);
     serializeJson(doc, cfgFile);
     cfgFile.close();
+}
+
+void DeviceConfiguration::generateKeys(unsigned char iv[16], unsigned char key[128])
+{
+    uint8_t mac[6] = {0, 0, 0, 0, 0, 0};
+    ETH.macAddress(mac);
+    for(int i=0;i<16;++i){
+        iv[i] = mac[i%6];
+    }
+    for(int i=0;i<128;++i){
+        key[i] = mac[i%6] + (mac[0] << 3);
+    }
+}
+
+std::string DeviceConfiguration::encrypt(const std::string& input)
+{
+    unsigned char* out;
+    std::string inData = input;
+    unsigned long cipherLen = inData.size() + 16 - (inData.size() % 16);
+    inData.resize(cipherLen);
+    out = (unsigned char*)malloc(cipherLen);
+    if(!out){
+        ESP_LOGE(TAG, "Unable to allocate crypto buffer!");
+    }
+    unsigned char iv[16];
+    unsigned char key[128];
+    generateKeys(iv, key);
+	mbedtls_aes_context aes;
+	mbedtls_aes_init(&aes);
+	mbedtls_aes_setkey_enc(&aes, key, 128);
+	mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_ENCRYPT, cipherLen, iv, (const unsigned char*)input.c_str(), out);
+	mbedtls_aes_free(&aes);
+
+    std::string ret;
+    ret.resize(cipherLen*2);
+    for(int i=0;i<cipherLen;++i){
+        sprintf(&ret[i*2], "%02X", out[i]);        
+    }
+    return ret;
+}
+
+std::string DeviceConfiguration::decrypt(const std::string& input)
+{
+    std::string ret;
+    size_t dataSize = input.length()/2;
+    ret.resize(dataSize);
+    unsigned char* in;
+    unsigned char iv[16];
+    unsigned char key[128];
+    generateKeys(iv, key);
+
+    in = (unsigned char*)malloc(dataSize);
+    if(!in){
+        ESP_LOGE(TAG, "Unable to allocate crypto buffer! (%u bytes)", dataSize);
+    }else{
+        for(int i=0;i<dataSize;++i){
+            char data[3] = {input[i*2], input[i*2+1], '\0'};
+            sscanf(data, "%02X", &in[i]);
+        }
+    }
+    mbedtls_aes_context aes;
+	mbedtls_aes_init(&aes);
+	mbedtls_aes_setkey_enc(&aes, key, 128);
+	mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_DECRYPT, dataSize, iv, in, (unsigned char*)&ret[0]);
+	mbedtls_aes_free(&aes);
+    return ret;
+}
+
+void DeviceConfiguration::setUserName(const std::string& user)
+{
+    if(xSemaphoreTake(mutexData_, portMAX_DELAY ) == pdTRUE)
+    {
+        userName_ = user;
+        lastChange_ = millis();
+        xSemaphoreGive(mutexData_);
+        notifyListeners(Parameter::LOGIN_USER);
+    }
+}
+
+/**
+ * Gets configuration user name
+ */
+void DeviceConfiguration::getUserName(std::string& user)
+{
+    if(xSemaphoreTake(mutexData_, portMAX_DELAY ) == pdTRUE)
+    {
+        user = userName_;
+        xSemaphoreGive(mutexData_);
+    }
+}
+
+/**
+ * Sets configuration password
+ */
+void DeviceConfiguration::setPassword(const std::string& password)
+{
+    if(xSemaphoreTake(mutexData_, portMAX_DELAY ) == pdTRUE)
+    {
+        password_ = encrypt(password);
+        lastChange_ = millis();
+        xSemaphoreGive(mutexData_);
+        notifyListeners(Parameter::LOGIN_PASS);
+    }
+}
+
+/**
+ * Gets configuraton password
+ */
+void DeviceConfiguration::getPassword(std::string& password)
+{
+    if(xSemaphoreTake(mutexData_, portMAX_DELAY ) == pdTRUE)
+    {
+        if(password_.empty()){
+            password = "";
+        }else{
+            password = decrypt(password_);
+        }
+        xSemaphoreGive(mutexData_);
+    }
 }

@@ -4,6 +4,17 @@
 #include <Arduino.h>
 #include <OptionalData.hpp>
 
+#define DAEMON_TASK_LOOP_DELAY  3 // ticks
+#define CLASS_TASK_LOOP_DELAY   3 // ticks
+#define DAEMON_TASK_COREID      0
+#define CLASS_TASK_COREID       0
+#include <usb_host_hid_bridge.h>
+
+void config_desc_cb(const usb_config_desc_t *config_desc);
+void device_info_cb(usb_device_info_t *dev_info);
+void hid_report_descriptor_cb(usb_transfer_t *transfer);
+void hid_report_cb(usb_transfer_t *transfer);
+void device_removed_cb();
 
 class HIDData
 {
@@ -98,6 +109,12 @@ class UPSHIDDevice
 public:
     UPSHIDDevice();
     virtual ~UPSHIDDevice() = default;
+
+    /**
+     * Begin
+     */
+    void begin();
+
     /**
      * Parse an HID report
      * @param data Pointer to HID report data
@@ -268,7 +285,10 @@ private:
      * Updates the LocalItem store
      */
     static void updateLocalItems(HIDLocalItem& store, const HIDReportItemPrefix& prefix, const uint8_t* data);
+
+    UsbHostHidBridge hidBridge;
 };
 
+extern UPSHIDDevice upsDevice;
 
 #endif

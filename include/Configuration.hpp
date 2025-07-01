@@ -7,6 +7,8 @@
 #include <vector>
 #include <functional>
 #include <FreeRTOS.h>
+#include <mbedtls/md.h>
+
 
 class DeviceConfiguration {
 public:
@@ -17,7 +19,9 @@ public:
         DEVICE_NAME = 0,
         IP_CONFIGURATION,
         SNMP_TRAP_IP,
-        TEMPERATURE_ALARM
+        TEMPERATURE_ALARM,
+        LOGIN_USER,
+        LOGIN_PASS,
     };
 
     DeviceConfiguration();
@@ -96,8 +100,10 @@ public:
 
     /**
      * Fill configuration to JSON document
+     * @param doc JSON document to fill
+     * @param includePass True to include ciphered password
      */
-    void toJSON(JsonDocument& doc);
+    void toJSON(JsonDocument& doc, bool includeLogin = false);
 
     /**
      * Loads from JSON document
@@ -114,12 +120,34 @@ public:
      */
     void registerListener(ParameterListener listener);
 
+    /**
+     * Sets configuration user name
+     */
+    void setUserName(const std::string& user);
+
+    /**
+     * Gets configuration user name
+     */
+    void getUserName(std::string& user);
+
+    /**
+     * Sets configuration password
+     */
+    void setPassword(const std::string& password);
+
+    /**
+     * Gets configuraton password
+     */
+    void getPassword(std::string& password);
+
 private:
     unsigned long lastChange_;                  //!< Last change of one setting
     double tempAlarm_;                          //!< Temperature alarm
     SemaphoreHandle_t mutexData_;               //!< Protect access to ressources
     SemaphoreHandle_t mutexListeners_;          //!< Protect access to listeners vector
     std::string deviceName_;                    //!< Device name
+    std::string userName_;                      //!< User name
+    std::string password_;                      //!< Password
     IPAddress ip_;                              //!< Device IP (0 for DHCP)
     IPAddress subnet_;                          //!< Device Subnet if static IP
     IPAddress gateway_;                         //!< Next gateway if static IP
@@ -128,6 +156,10 @@ private:
 
     void notifyListeners(Parameter changed);
     void write();
+
+    static std::string encrypt(const std::string& input);
+    static std::string decrypt(const std::string& input);
+    static void generateKeys(unsigned char iv[16], unsigned char key[128]);
 };
 
 extern DeviceConfiguration Configuration;

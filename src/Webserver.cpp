@@ -19,8 +19,6 @@ Webserver webServer;
 extern const uint8_t ota_page_start[] asm("_binary_html_ota_html_start");
 extern const uint8_t ota_page_end[] asm("_binary_html_ota_html_end");
 
-extern DeviceConfiguration config;
-
 //-----------------------------------------------------------------------------
 
 bool Webserver::checkAuthentication(httpd_req_t *req)
@@ -142,7 +140,7 @@ esp_err_t Webserver::ota_post_handler( httpd_req_t *req )
         }
         ESP_LOGI(TAG, "OTA End failed (%s)!", esp_err_to_name(err));
 
-        return_failure:
+return_failure:
         if ( update_handle )
         {
             esp_ota_abort(update_handle);
@@ -163,7 +161,7 @@ esp_err_t Webserver::cfg_get_handler( httpd_req_t *req )
         httpd_resp_set_hdr( req, "Connection", "keep-alive" );
         httpd_resp_set_type(req, "application/json");
         std::string cfgJSON;
-        config.toJSONString(cfgJSON);
+        Configuration.toJSONString(cfgJSON);
         httpd_resp_send( req, cfgJSON.c_str(), cfgJSON.length());
         return ESP_OK;
     }
