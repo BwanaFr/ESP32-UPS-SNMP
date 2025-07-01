@@ -46,10 +46,10 @@ private:
     bool checkAuthentication(httpd_req_t *req);
     
     //HTTP handlers
-    static esp_err_t ota_get_handler( httpd_req_t *req );
-    static esp_err_t ota_post_handler( httpd_req_t *req );
-
-
+    static esp_err_t ota_get_handler( httpd_req_t *req );       //Handle OTA GET request
+    static esp_err_t ota_post_handler( httpd_req_t *req );      //Handle OTA POST request
+    static esp_err_t cfg_get_handler( httpd_req_t *req );       //Handle configuration GET request
+    static esp_err_t cfg_post_handler( httpd_req_t *req );      //Handle configuration POST request
 };
 
 extern Webserver webServer;

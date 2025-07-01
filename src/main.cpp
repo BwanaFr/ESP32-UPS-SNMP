@@ -4,6 +4,13 @@
 #include <SPI.h>
 #include <Webserver.hpp>
 #include <WiFi.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <inttypes.h>
+
+#include "UPSSNMP.hpp"
+#include "UPSHIDDevice.hpp"
+#include "Configuration.hpp"
 
 //Pins defs for W5500 chip
 #define ETH_MOSI_PIN 11
@@ -33,50 +40,56 @@ void device_removed_cb();
 UsbHostHidBridge hidBridge;
 int32_t usb_input_ch[] = { 0,0,0,0, 0,0,0,0 };
 
-#include <stdint.h>
-#include <stdio.h>
-#include <inttypes.h>
 
-#include "UPSHIDDevice.hpp"
 UPSHIDDevice upsDevice;
+UPSSNMPAgent snmpAgent;
 
+
+static const char* TAG = "Main";
+
+/**
+ * Configuration changed
+ */
+void configChanged(DeviceConfiguration::Parameter what)
+{
+    switch(what){
+        case DeviceConfiguration::Parameter::DEVICE_NAME:
+            std::string deviceName;
+            Configuration.getDeviceName(deviceName);
+            ETH.setHostname(deviceName.c_str());
+            ESP_LOGI(TAG, "New device name! %s", deviceName.c_str());
+    }
+}
 
 void WiFiEvent(arduino_event_id_t event)
 {
     switch (event) {
     case ARDUINO_EVENT_ETH_START:
-        Serial.println("ETH Started");
-        //set eth hostname here
-        ETH.setHostname("mdonze-esp32");
+        ESP_LOGI(TAG, "ETH Started");
+        //Sets hostname
+        {
+            std::string deviceName;
+            config.getDeviceName(deviceName);
+            ETH.setHostname(deviceName.c_str());
+        }
         break;
     case ARDUINO_EVENT_ETH_CONNECTED:
-        Serial.println("ETH Connected");
-        webServer.setCredentials("TOTO", "LALA");
+        ESP_LOGI(TAG, "ETH Connected");
         break;
     case ARDUINO_EVENT_ETH_GOT_IP:
-        Serial.print("ETH MAC: ");
-        Serial.print(ETH.macAddress());
-        Serial.print(", IPv4: ");
-        Serial.print(ETH.localIP());
-        if (ETH.fullDuplex()) {
-            Serial.print(", FULL_DUPLEX");
-        }
-        Serial.print(", ");
-        Serial.print(ETH.linkSpeed());
-        Serial.println("Mbps");
-
-        // After connecting, start the echo service
-        Serial.println("Start web server");
+        ESP_LOGI(TAG, "ETH MAC: %s, IPv4: %s, Duplex: %s, %uMbps", ETH.macAddress().c_str(), ETH.localIP().toString().c_str(), 
+                    ETH.fullDuplex() ? "FULL" : "HALF", ETH.linkSpeed());
+        //Ethernet available starts network services
         webServer.start();
-        // start_webserver();
+        snmpAgent.start();
         break;
     case ARDUINO_EVENT_ETH_DISCONNECTED:
-        Serial.println("ETH Disconnected,Stop web server");
-        webServer.start();
-        // stop_webserver();
+        ESP_LOGI(TAG, "ETH Disconnected, Stop services");
+        webServer.stop();
+        snmpAgent.stop();
         break;
     case ARDUINO_EVENT_ETH_STOP:
-        Serial.println("ETH Stopped");
+        ESP_LOGI(TAG, "ETH Stopped");
         break;
     default:
         break;
@@ -85,25 +98,49 @@ void WiFiEvent(arduino_event_id_t event)
 
 void setup()
 {
+    //Starts serial
     Serial.begin(115200);
+    
+    //Initializes configuration
+    config.begin();
+    //Loads configuration from flash (Default used if flash empty)
+    config.load();
 
+    //Starts Ethernet
     WiFi.onEvent(WiFiEvent);
     if (!ETH.begin(ETH_PHY_W5500, 1, ETH_CS_PIN, ETH_INT_PIN, ETH_RST_PIN,
                    SPI3_HOST,
                    ETH_SCLK_PIN, ETH_MISO_PIN, ETH_MOSI_PIN)) {
-        Serial.println("ETH start Failed!");
+        ESP_LOGE(TAG, "ETH start Failed!");
+        //TODO: Flash LED in RED
+    }
+    IPAddress ip, subnet, gateway;
+    config.getIPAddress(ip, subnet, gateway);
+    if(ip == INADDR_NONE){
+        ESP_LOGI(TAG, "Using DHCP");
+    }else{
+        ESP_LOGI(TAG, "Setting IP to %s %s %s", ip.toString().c_str(), subnet.toString().c_str(), gateway.toString().c_str());
+        ETH.config(ip, gateway, subnet);
     }
 
 #ifdef RGB_LED_PIN
+    //Starts the user led task
     userLed.begin();
 #endif
+    //Configure HID bridge
+    //TODO: Move this to the UPSHIDDevice object
     hidBridge.onConfigDescriptorReceived = config_desc_cb;
     hidBridge.onDeviceInfoReceived = device_info_cb;
     hidBridge.onHidReportDescriptorReceived = hid_report_descriptor_cb;
     hidBridge.onReportReceived = hid_report_cb;
     hidBridge.onDeviceRemoved = device_removed_cb;
     hidBridge.begin();
-    webServer.setup();    
+
+    //Setup the web server
+    webServer.setup();
+
+    //Register a listener to know configuration changes
+    config.registerListener(configChanged);
 }
 
 void loop()
@@ -122,8 +159,8 @@ void loop()
         lastRGB = now;
     }
 #endif
-    delay(10);
-
+    snmpAgent.loop();
+    config.loop();
 }
 
 void config_desc_cb(const usb_config_desc_t *config_desc) {

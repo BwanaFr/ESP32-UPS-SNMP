@@ -3,22 +3,23 @@
 #include "esp_log.h"
 #include "esp_tls_crypto.h"
 #include <esp_http_server.h>
-
-const char* TAG = "Webserver";
-
 #include <esp_flash_partitions.h>
 #include <esp_ota_ops.h>
 #include <esp_partition.h>
+#include <Configuration.hpp>
+
 
 #define DEVICE_NAME "ESP32"
 #define HTTPD_401   "401 UNAUTHORIZED"           /*!< HTTP Response 401 */
 
 
+static const char* TAG = "Webserver";
 Webserver webServer;
 
-static char auth_buffer[512];
 extern const uint8_t ota_page_start[] asm("_binary_html_ota_html_start");
 extern const uint8_t ota_page_end[] asm("_binary_html_ota_html_end");
+
+extern DeviceConfiguration config;
 
 //-----------------------------------------------------------------------------
 
@@ -28,14 +29,19 @@ bool Webserver::checkAuthentication(httpd_req_t *req)
         //Always authenticated
         return true;
     }
+    char* auth_buffer = (char*)calloc(512, sizeof(char));
+    if(!auth_buffer){
+        ESP_LOGE(TAG, "Unable to allocate auth_buffer!");
+    }
     size_t buf_len = httpd_req_get_hdr_value_len( req, "Authorization" ) + 1;
-    if ( ( buf_len > 1 ) && ( buf_len <= sizeof( auth_buffer ) ) )
+    if ( ( buf_len > 1 ) && ( buf_len <= 512 ) )
     {
         if ( httpd_req_get_hdr_value_str( req, "Authorization", auth_buffer, buf_len ) == ESP_OK )
         {
             if ( !strncmp(authDigest_.c_str(), auth_buffer, buf_len ) )
             {
-                ESP_LOGI(TAG, "Authenticated!" );                
+                ESP_LOGI(TAG, "Authenticated!" );
+                free(auth_buffer);              
                 return true;
             }
         }
@@ -45,6 +51,7 @@ bool Webserver::checkAuthentication(httpd_req_t *req)
     httpd_resp_set_hdr( req, "Connection", "keep-alive" );
     httpd_resp_set_hdr( req, "WWW-Authenticate", "Basic realm=\"UPS monitoring\"" );
     httpd_resp_send( req, NULL, 0 );
+    free(auth_buffer);
     return false;
 }
 
@@ -147,6 +154,26 @@ esp_err_t Webserver::ota_post_handler( httpd_req_t *req )
     return ESP_FAIL;
 }
 
+esp_err_t Webserver::cfg_get_handler( httpd_req_t *req )
+{
+    Webserver* instance = static_cast<Webserver*>(req->user_ctx);
+
+    if(instance->checkAuthentication(req)){
+        httpd_resp_set_status( req, HTTPD_200 );
+        httpd_resp_set_hdr( req, "Connection", "keep-alive" );
+        httpd_resp_set_type(req, "application/json");
+        std::string cfgJSON;
+        config.toJSONString(cfgJSON);
+        httpd_resp_send( req, cfgJSON.c_str(), cfgJSON.length());
+        return ESP_OK;
+    }
+    return ESP_OK;
+}
+
+esp_err_t Webserver::cfg_post_handler( httpd_req_t *req )
+{
+    return ESP_FAIL;
+}
 
 Webserver::Webserver() : server_(nullptr)
 {
@@ -177,6 +204,16 @@ void Webserver::start()
                 .user_ctx  = this,
             };
             httpd_register_uri_handler(server_, &ota_get);
+
+            //Configuration
+            httpd_uri_t cfg_get =
+            {
+                .uri       = "/config",
+                .method    = HTTP_GET,
+                .handler   = cfg_get_handler,
+                .user_ctx  = this,
+            };
+            httpd_register_uri_handler(server_, &cfg_get);
             return;
         }
         ESP_LOGI(TAG, "Error starting server!");

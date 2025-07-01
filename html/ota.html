@@ -1,10 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
 <style>
 .progress {margin: 15px auto;  max-width: 500px;height: 30px;}
 .progress .progress__bar {
   height: 100%; width: 1%; border-radius: 15px;
   background: repeating-linear-gradient(135deg,#336ffc,#036ffc 15px,#1163cf 15px,#1163cf 30px); }
  .status {font-weight: bold; font-size: 30px;};
-</style><center><h1>ESP32</h1></center>
+</style>
+</head>
+<body>
+<center><h1 id="devName">ESP32 UPS</h1></center>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/2.2.1/css/bootstrap.min.css">
 <div class="well" style="text-align: center;">
   <div class="btn" onclick="file_sel.click();"><i class="icon-upload" style="padding-right: 5px;"></i>Upload Firmware</div>
@@ -38,4 +45,20 @@ function upload_file() {
   xhr.send(data);
   return false;
 }
+
+function fetchInfo(data, status, xhr){
+  const req = new XMLHttpRequest();
+    req.open("GET",'/config',true);
+    req.send();
+    req.onload = function(){
+      const json = JSON.parse(req.responseText);
+      document.getElementById("devName").innerHTML = json.DeviceName;
+    };
+}
+
+fetchInfo();
+
 </script>
+
+</body>
+</html>
