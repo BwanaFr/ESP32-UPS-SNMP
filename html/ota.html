@@ -52,7 +52,7 @@ function fetchInfo(data, status, xhr){
     req.send();
     req.onload = function(){
       const json = JSON.parse(req.responseText);
-      document.getElementById("devName").innerHTML = json.DeviceName;
+      document.getElementById("devName").innerHTML = json.Device_name + " firmware update";
     };
 }
 

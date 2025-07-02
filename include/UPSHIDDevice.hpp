@@ -3,6 +3,8 @@
 
 #include <Arduino.h>
 #include <OptionalData.hpp>
+#include <FreeRTOS.h>
+#include <string>
 
 #define DAEMON_TASK_LOOP_DELAY  3 // ticks
 #define CLASS_TASK_LOOP_DELAY   3 // ticks
@@ -30,12 +32,12 @@ public:
     /**
      * Sets if the data is used
      */
-    inline void setUsed(bool used){ used_ = used; };
+    void setUsed(bool used);
 
     /**
      * Gets if the data is used
      */
-    inline bool isUsed() const { return used_; };
+    bool isUsed() const;
 
     /**
      * Sets report Id associated with this data
@@ -77,7 +79,7 @@ public:
     /**
      * Gets value of the data
      */
-    inline double getValue() { return used_ ? value_ : 0.0; }
+    double getValue() const;
 
     inline void setLogicalMinimum(const OptionalData<int32_t>& minimum){ logicalMinimum_ = minimum; };
     inline void setLogicalMaximum(const OptionalData<int32_t>& maximum){ logicalMaximum_ = maximum; };
@@ -85,8 +87,11 @@ public:
     inline void setPhysicalMaximum(const OptionalData<int32_t>& maximum){ physicalMaximum_ = maximum; };
 
     inline void setUnitExponent(const OptionalData<int32_t>& exponent){ unitExponent_ = exponent; };
+    inline void setUnit(const OptionalData<uint32_t>& unit){ unit_ = unit; };
 
     void reset();
+
+
 
 private:
     uint8_t usagePage_;
@@ -97,11 +102,13 @@ private:
     OptionalData<int32_t> physicalMinimum_;
     OptionalData<int32_t> physicalMaximum_;
     OptionalData<int32_t> unitExponent_;
+    OptionalData<uint32_t> unit_;
     uint32_t bitPlace_;
     uint32_t bitWidth_;
     const char* name_;
     bool used_;
     double value_;
+    SemaphoreHandle_t mutexData_;
 };
 
 class UPSHIDDevice
@@ -158,9 +165,39 @@ public:
     const HIDData& getBatteryPresent() const;
 
     /**
+     * Gets if battery needs replacement
+     */
+    const HIDData& getNeedReplacement() const;
+
+    /**
+     * Gets estimated runtime in seconds
+     */
+    const HIDData& getRuntimeToEmpty() const;
+
+    /**
      * Gets if the UPS is connected
      */
     inline bool isConnected() const { return connected_; }
+
+    /**
+     * Sets USB device information
+     */
+    void setDeviceInfo(usb_device_info_t *dev_info);
+
+    /**
+     * Gets USB manufacturer
+     */
+    inline const char* getManufacturer() { return manufacturer_.c_str(); };
+    
+    /**
+     * Gets USB model
+     */
+    inline const char* getModel() { return model_.c_str(); };
+    
+    /**
+     * Gets USB serial number
+     */
+    inline const char* getSerial() { return serial_.c_str(); };
 private:
 
     /**
@@ -263,6 +300,9 @@ private:
 
     HIDData datas_[INTEREST_USAGES_COUNT];
     bool connected_;
+    std::string manufacturer_;
+    std::string model_;
+    std::string serial_;
 
     static void printHIDReportItemPrefix(const HIDReportItemPrefix& item);
     static const char* mainTagToString(HIDReportItemPrefix::MainTag mainTag);
@@ -285,6 +325,13 @@ private:
      * Updates the LocalItem store
      */
     static void updateLocalItems(HIDLocalItem& store, const HIDReportItemPrefix& prefix, const uint8_t* data);
+
+    /**
+     * Gets a string descriptor
+     * @param str_desc ESP IDF string descriptor
+     * @param dest Destination string
+     */
+    static void getStringDescriptor(const usb_str_desc_t *str_desc, std::string& dest);
 
     UsbHostHidBridge hidBridge;
 };

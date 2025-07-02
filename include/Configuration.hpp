@@ -7,8 +7,6 @@
 #include <vector>
 #include <functional>
 #include <FreeRTOS.h>
-#include <mbedtls/md.h>
-
 
 class DeviceConfiguration {
 public:

@@ -57,8 +57,8 @@ void DeviceConfiguration::load()
 
 void DeviceConfiguration::fromJSON(const JsonDocument& doc)
 {
-    if(doc["DeviceName"]){
-        setDeviceName(doc["DeviceName"]);
+    if(doc["Device_name"]){
+        setDeviceName(doc["Device_name"]);
     }
     
     IPAddress ip;
@@ -92,8 +92,8 @@ void DeviceConfiguration::fromJSON(const JsonDocument& doc)
     }
     setIPAddress(ip, subnet, gateway);
 
-    if(doc["TemperatureMax"]){
-        setTemperatureAlarm(doc["TemperatureMax"]);
+    if(doc["Temperature_max"]){
+        setTemperatureAlarm(doc["Temperature_max"]);
     }
 }
 
@@ -239,11 +239,11 @@ void DeviceConfiguration::toJSON(JsonDocument& doc, bool includeLogin)
 {
     if(xSemaphoreTake(mutexData_, portMAX_DELAY ) == pdTRUE)
     {        
-        doc["DeviceName"] = deviceName_;
+        doc["Device_name"] = deviceName_;
         doc["IP"] = ip_ == INADDR_NONE ? "DHCP" : ip_.toString();
         doc["Subnet"] = subnet_ == INADDR_NONE ? "DHCP" : subnet_.toString();
         doc["Gateway"] = subnet_ == INADDR_NONE ? "DHCP" : gateway_.toString();
-        doc["TemperatureMax"] = tempAlarm_;
+        doc["Temperature_max"] = tempAlarm_;
         if(includeLogin){
             doc["Username"] = userName_;
             doc["Password"] = password_;

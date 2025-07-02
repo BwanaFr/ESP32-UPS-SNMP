@@ -4,6 +4,7 @@
 #include <SNMPTrap.h>
 #include <SNMP_Agent.h>
 #include <ETH.h>
+#include <vector>
 
 class UPSSNMPAgent
 {
@@ -15,8 +16,16 @@ public:
     void stop();
     void loop();
 private:
-    SNMPAgent agent_;
+    void initializeOID();
+    void destroyOID();
+
+    SNMPAgent agent_;    
     bool started_;
     WiFiUDP* udp_;
+    unsigned long lastPoll_;
+    bool wasConnected_;
+    std::vector<ValueCallback*> callbacks_;
+    TimestampCallback* timestampCallback_;
+    SNMPTrap* upsTrap_;
 };
 #endif

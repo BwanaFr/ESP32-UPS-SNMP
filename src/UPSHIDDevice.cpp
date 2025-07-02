@@ -2,7 +2,7 @@
 #include "esp_log.h"
 #include <limits>
 
-static const char *TAG_UPS = "UPSHID";
+static const char *TAG = "UPSHID";
 
 UPSHIDDevice upsDevice;
 
@@ -10,16 +10,14 @@ UPSHIDDevice upsDevice;
  * Configuration descriptor callback
  */
 void config_desc_cb(const usb_config_desc_t *config_desc) {
-    usb_print_config_descriptor(config_desc, NULL);
+    // usb_print_config_descriptor(config_desc, NULL);
 }
 
 /**
  * Device info callback
  */
 void device_info_cb(usb_device_info_t *dev_info) {
-    if (dev_info->str_desc_manufacturer) usb_print_string_descriptor(dev_info->str_desc_manufacturer);
-    if (dev_info->str_desc_product)      usb_print_string_descriptor(dev_info->str_desc_product);
-    if (dev_info->str_desc_serial_num)   usb_print_string_descriptor(dev_info->str_desc_serial_num);
+    upsDevice.setDeviceInfo(dev_info);
 }
 
 void hid_report_descriptor_cb(usb_transfer_t *transfer) {
@@ -36,6 +34,9 @@ void hid_report_cb(usb_transfer_t *transfer) {
     upsDevice.hidReportData(data, transfer->actual_num_bytes);
 }
 
+/**
+ * Callback when USB device is removed
+ */
 void device_removed_cb() {
     upsDevice.deviceRemoved();
 }
@@ -45,6 +46,10 @@ HIDData::HIDData(uint8_t usagePage, uint8_t usage, const char* name) :
     bitPlace_(0), bitWidth_(0), name_(name), used_(false), value_(0.0)
     
 {
+    mutexData_ = xSemaphoreCreateMutex();
+    if(mutexData_ == NULL){
+        ESP_LOGE(TAG, "Unable to create data mutex");
+    }
 }
     
 bool HIDData::match(uint8_t usagePage, uint8_t usage)
@@ -54,50 +59,88 @@ bool HIDData::match(uint8_t usagePage, uint8_t usage)
 
 void HIDData::setValue(const uint8_t* buffer, size_t len)
 {
-    int32_t ret = 0;
-    //TODO: Maybe we don't need to recompute this every time
-    int32_t physicalMin = 0;
-    int32_t physicalMax = 0;
-    int32_t unitExponent = 0;
-    if((!physicalMaximum_) || (!physicalMinimum_) || ((physicalMaximum_.getValue() == 0) && (physicalMinimum_.getValue() == 0))){
-        physicalMin = logicalMinimum_.getValue();
-        physicalMax = logicalMaximum_.getValue();
-    }
-    if(unitExponent_){
-        unitExponent = unitExponent_.getValue();
-    }
-    double resolution = (logicalMaximum_.getValue() - logicalMinimum_.getValue())/
-        ((physicalMax - physicalMin) * pow(10.0, unitExponent));
+    if(xSemaphoreTake(mutexData_, portMAX_DELAY ) == pdTRUE)
+    {
+        int32_t ret = 0;
+        //TODO: Maybe we don't need to recompute this every time
 
-    //TODO: Handle signed/unsigned (page 38 of HID 1.11)
-    uint8_t byteNumber = bitPlace_ / 8;
-    uint8_t startBit = bitPlace_ - (byteNumber*8);
-    uint32_t bitMask = (1<<bitWidth_)-1;
-    
-    for(int i=0;i<bitWidth_;++i){
-        ret |= ((buffer[byteNumber] >> startBit) & 0x1) << i;
-        ++startBit;
-        if(startBit >= 8){
-            startBit = 0;
-            ++byteNumber;
+        int32_t physicalMin = 0;
+        int32_t physicalMax = 0;
+        int32_t unitExponent = 0;
+        if((!physicalMaximum_) || (!physicalMinimum_) || ((physicalMaximum_.getValue() == 0) && (physicalMinimum_.getValue() == 0))){
+            physicalMin = logicalMinimum_.getValue();
+            physicalMax = logicalMaximum_.getValue();
         }
+        if(unitExponent_){
+            unitExponent = unitExponent_.getValue();
+        }
+        double factor = ((double)physicalMax - (double)physicalMin) / ((double)logicalMaximum_.getValue() - (double)logicalMinimum_.getValue());
+
+        //TODO: Handle signed/unsigned (page 38 of HID 1.11)
+        uint8_t byteNumber = bitPlace_ / 8;
+        uint8_t startBit = bitPlace_ - (byteNumber*8);
+        uint32_t bitMask = (1<<bitWidth_)-1;
+        
+        for(int i=0;i<bitWidth_;++i){
+            ret |= ((buffer[byteNumber] >> startBit) & 0x1) << i;
+            ++startBit;
+            if(startBit >= 8){
+                startBit = 0;
+                ++byteNumber;
+            }
+        }
+        value_ = (double)((ret - logicalMinimum_.getValue()) * factor) + physicalMin;
+        // ESP_LOGI(TAG, "%s [ID: 0x%02x] Byte number : %u, mask : 0x%0x, value: %f (unit: 0x%x)", name_, reportId_, byteNumber, bitMask, value_, unit_ ? unit_.getValue() : 0);
+        xSemaphoreGive(mutexData_);
     }
-    
-    ESP_LOGI(TAG_UPS, "%s [ID: %u] Byte number : %u, mask : 0x%0x, resolution : %f, value: 0x%X", name_, reportId_, byteNumber, bitMask, resolution, ret);
-    value_ = ret;
+}
+
+void HIDData::setUsed(bool used)
+{
+    if(xSemaphoreTake(mutexData_, portMAX_DELAY ) == pdTRUE)
+    {
+        used_ = used;
+        xSemaphoreGive(mutexData_);
+    }
+};
+
+bool HIDData::isUsed() const
+{
+    bool ret = false;
+    if(xSemaphoreTake(mutexData_, portMAX_DELAY ) == pdTRUE)
+    {
+        ret = used_;
+        xSemaphoreGive(mutexData_);
+    }
+    return ret;
+}
+
+double HIDData::getValue() const
+{
+    double ret;
+    if(xSemaphoreTake(mutexData_, portMAX_DELAY ) == pdTRUE)
+    {
+        ret = used_ ? value_ : 0.0;
+        xSemaphoreGive(mutexData_);
+    }
+    return ret;
 }
 
 void HIDData::reset()
 {
-    used_ = false;
-    reportId_ = 0;
-    logicalMinimum_.reset();
-    logicalMaximum_.reset();
-    physicalMinimum_.reset();
-    physicalMaximum_.reset();
-    unitExponent_.reset();
-    bitPlace_ = 0;
-    bitWidth_ = 0;
+    if(xSemaphoreTake(mutexData_, portMAX_DELAY ) == pdTRUE)
+    {
+        used_ = false;
+        reportId_ = 0;
+        logicalMinimum_.reset();
+        logicalMaximum_.reset();
+        physicalMinimum_.reset();
+        physicalMaximum_.reset();
+        unitExponent_.reset();
+        bitPlace_ = 0;
+        bitWidth_ = 0;
+        xSemaphoreGive(mutexData_);
+    }
 }
 
 UPSHIDDevice::UPSHIDDevice() : 
@@ -147,7 +190,7 @@ void UPSHIDDevice::buildFromHIDReport(const uint8_t* data, size_t dataLen)
                         datas_[j].setPhysicalMaximum(globalItems.physicalMaximum);
                         datas_[j].setPhysicalMinimum(globalItems.physicalMinimum);
                         datas_[j].setUnitExponent(globalItems.unitExponent);
-                        //TODO: Implement unit
+                        datas_[j].setUnit(globalItems.unit);
 
                         connected_ = true;
                     }
@@ -174,12 +217,15 @@ void UPSHIDDevice::hidReportData(const uint8_t* data, size_t len)
 
 void UPSHIDDevice::deviceRemoved()
 {
-    ESP_LOGI(TAG_UPS, "Device removed");
+    ESP_LOGI(TAG, "Device removed");
     connected_ = false;
     //Reset existing reports
     for(int j=0;j<sizeof(datas_)/sizeof(HIDData);++j){
         datas_[j].reset();
     }
+    manufacturer_ = "";
+    model_ = "";
+    serial_ = "";
 }
 
 const HIDData& UPSHIDDevice::getRemainingCapacity() const
@@ -207,7 +253,19 @@ const HIDData& UPSHIDDevice::getDischarging() const
 
 const HIDData& UPSHIDDevice::getBatteryPresent() const
 {
-    return datas_[1];
+    return datas_[4];
+}
+
+
+const HIDData& UPSHIDDevice::getNeedReplacement() const
+{
+    return datas_[5];
+}
+
+
+const HIDData& UPSHIDDevice::getRuntimeToEmpty() const
+{
+    return datas_[6];
 }
 
 void UPSHIDDevice::updateGlobalItems(HIDGlobalItems& store, const HIDReportItemPrefix& prefix, const uint8_t* data)
@@ -305,13 +363,13 @@ void UPSHIDDevice::printHIDReportItemPrefix(const HIDReportItemPrefix& item)
             tagString = mainTagToString(item.bTag.mainTag);
             break;
         default:
-            ESP_LOGI(TAG_UPS, "Unsupported bType");
+            ESP_LOGI(TAG, "Unsupported bType");
             return;
     };
     if(tagString == nullptr){
-        ESP_LOGI(TAG_UPS, "Invalid item : 0x%02x", item.raw);
+        ESP_LOGI(TAG, "Invalid item : 0x%02x", item.raw);
     }else{
-        ESP_LOGI(TAG_UPS, "Item(%s) : %s, data=%d bytes", bType, tagString, item.bSize);
+        ESP_LOGI(TAG, "Item(%s) : %s, data=%d bytes", bType, tagString, item.bSize);
     }
 }
 
@@ -416,4 +474,28 @@ uint32_t UPSHIDDevice::toUnSignedInteger(const uint8_t* data, size_t len)
 		shift += 8;
 	}
     return ret;
+}
+
+void UPSHIDDevice::setDeviceInfo(usb_device_info_t *dev_info)
+{
+    getStringDescriptor(dev_info->str_desc_manufacturer, manufacturer_);
+    getStringDescriptor(dev_info->str_desc_product, model_);
+    getStringDescriptor(dev_info->str_desc_serial_num, serial_);
+}
+
+void UPSHIDDevice::getStringDescriptor(const usb_str_desc_t *str_desc, std::string& dest)
+{
+    dest = "";
+    if(str_desc){
+        for (int i = 0; i < str_desc->bLength / 2; i++) {
+            /*
+            USB String descriptors of UTF-16.
+            Right now We just skip any character larger than 0xFF to stay in BMP Basic Latin and Latin-1 Supplement range.
+            */
+            if (str_desc->wData[i] > 0xFF) {
+                continue;
+            }
+            dest += (char)str_desc->wData[i];
+        }
+    }
 }
