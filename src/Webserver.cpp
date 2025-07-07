@@ -7,7 +7,7 @@
 #include <esp_ota_ops.h>
 #include <esp_partition.h>
 #include <Configuration.hpp>
-
+#include <UPSHIDDevice.hpp>
 
 #define DEVICE_NAME "ESP32"
 #define HTTPD_401   "401 UNAUTHORIZED"           /*!< HTTP Response 401 */
@@ -170,7 +170,40 @@ esp_err_t Webserver::cfg_get_handler( httpd_req_t *req )
 
 esp_err_t Webserver::cfg_post_handler( httpd_req_t *req )
 {
+    //TODO: Handle
     return ESP_FAIL;
+}
+
+esp_err_t Webserver::status_get_handler( httpd_req_t *req )
+{
+    Webserver* instance = static_cast<Webserver*>(req->user_ctx);
+
+    httpd_resp_set_status( req, HTTPD_200 );
+    httpd_resp_set_hdr( req, "Connection", "keep-alive" );
+    httpd_resp_set_type(req, "application/json");
+    //Build a JSON with UPS status
+    JsonDocument doc;
+    //Sets UPS status to JSON file
+    upsDevice.statusToJSON(doc);
+
+    //Adds some info from the configuration
+    std::string devName;
+    Configuration.getDeviceName(devName);
+    doc["Network"]["Name"] = devName;
+    IPAddress ipAddress, subnet, gateway;
+    Configuration.getIPAddress(ipAddress, subnet, gateway);
+    doc["Network"]["IP"] = ipAddress == INADDR_NONE ? "DHCP" : ipAddress.toString();
+    doc["Network"]["Subnet"] = subnet == INADDR_NONE ? "DHCP" : subnet.toString();
+    doc["Network"]["Gateway"] = gateway == INADDR_NONE ? "DHCP" : gateway.toString();
+
+    IPAddress snmpTrap;
+    Configuration.getSNMPTrap(snmpTrap);
+    doc["SNMP"]["Trap IP"] = snmpTrap == INADDR_NONE ? "NONE" : snmpTrap.toString();
+
+    std::string upsStatusJSON;
+    serializeJson(doc, upsStatusJSON);
+    httpd_resp_send( req, upsStatusJSON.c_str(), upsStatusJSON.length());
+    return ESP_OK;
 }
 
 Webserver::Webserver() : server_(nullptr)
@@ -212,6 +245,16 @@ void Webserver::start()
                 .user_ctx  = this,
             };
             httpd_register_uri_handler(server_, &cfg_get);
+
+            //Status
+            httpd_uri_t status_get =
+            {
+                .uri       = "/status",
+                .method    = HTTP_GET,
+                .handler   = status_get_handler,
+                .user_ctx  = this,
+            };
+            httpd_register_uri_handler(server_, &status_get);
             return;
         }
         ESP_LOGI(TAG, "Error starting server!");

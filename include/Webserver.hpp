@@ -50,6 +50,7 @@ private:
     static esp_err_t ota_post_handler( httpd_req_t *req );      //Handle OTA POST request
     static esp_err_t cfg_get_handler( httpd_req_t *req );       //Handle configuration GET request
     static esp_err_t cfg_post_handler( httpd_req_t *req );      //Handle configuration POST request
+    static esp_err_t status_get_handler( httpd_req_t *req );    //Handle status GET request
 };
 
 extern Webserver webServer;

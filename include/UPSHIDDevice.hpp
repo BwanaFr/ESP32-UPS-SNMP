@@ -5,6 +5,7 @@
 #include <OptionalData.hpp>
 #include <FreeRTOS.h>
 #include <string>
+#include <ArduinoJson.h>
 
 #define DAEMON_TASK_LOOP_DELAY  3 // ticks
 #define CLASS_TASK_LOOP_DELAY   3 // ticks
@@ -17,6 +18,7 @@ void device_info_cb(usb_device_info_t *dev_info);
 void hid_report_descriptor_cb(usb_transfer_t *transfer);
 void hid_report_cb(usb_transfer_t *transfer);
 void device_removed_cb();
+
 
 class HIDData
 {
@@ -90,9 +92,11 @@ public:
     inline void setUnit(const OptionalData<uint32_t>& unit){ unit_ = unit; };
 
     void reset();
-
-
-
+    
+    /**
+     * Gets number of bits representing this data
+     */
+    inline uint8_t getBitWidth() const { return bitWidth_; }
 private:
     uint8_t usagePage_;
     uint8_t usage_;
@@ -187,17 +191,29 @@ public:
     /**
      * Gets USB manufacturer
      */
-    inline const char* getManufacturer() { return manufacturer_.c_str(); };
+    inline const char* getManufacturer() const { return manufacturer_.c_str(); };
     
     /**
      * Gets USB model
      */
-    inline const char* getModel() { return model_.c_str(); };
+    inline const char* getModel() const { return model_.c_str(); };
     
     /**
      * Gets USB serial number
      */
-    inline const char* getSerial() { return serial_.c_str(); };
+    inline const char* getSerial() const { return serial_.c_str(); };
+
+    /**
+     * Gets status in JSON format
+     */
+    void statusToJSON(JsonDocument& doc) const;
+    
+    /**
+     * Gets status in JSON format
+     */
+    void statusToJSONString(std::string& str) const;
+
+
 private:
 
     /**
@@ -332,6 +348,11 @@ private:
      * @param dest Destination string
      */
     static void getStringDescriptor(const usb_str_desc_t *str_desc, std::string& dest);
+
+    /**
+     * Adds to JSON
+     */
+    static void addToJSON(const HIDData& data, JsonDocument& doc);
 
     UsbHostHidBridge hidBridge;
 };

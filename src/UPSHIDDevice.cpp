@@ -1,6 +1,7 @@
 #include <UPSHIDDevice.hpp>
 #include "esp_log.h"
 #include <limits>
+#include <ArduinoJson.h>
 
 static const char *TAG = "UPSHID";
 
@@ -496,6 +497,43 @@ void UPSHIDDevice::getStringDescriptor(const usb_str_desc_t *str_desc, std::stri
                 continue;
             }
             dest += (char)str_desc->wData[i];
+        }
+    }
+}
+
+void UPSHIDDevice::statusToJSON(JsonDocument& doc) const
+{
+    if(isConnected()){
+        doc["UPS"]["status"] = "online";
+        addToJSON(getRemainingCapacity(), doc);
+        addToJSON(getACPresent(), doc);
+        addToJSON(getCharging(), doc);
+        addToJSON(getDischarging(), doc);
+        addToJSON(getBatteryPresent(), doc);
+        addToJSON(getNeedReplacement(), doc);
+        addToJSON(getRuntimeToEmpty(), doc);
+        doc["UPS"]["model"] = getModel();
+        doc["UPS"]["serial"] = getSerial();
+    }else{
+        doc["status"] = "offline";
+    }
+}
+
+void UPSHIDDevice::statusToJSONString(std::string& str) const
+{
+    JsonDocument doc;
+    statusToJSON(doc);
+    serializeJson(doc, str);
+}
+
+void UPSHIDDevice::addToJSON(const HIDData& data, JsonDocument& doc)
+{
+    if(data.isUsed()){
+        if(data.getBitWidth() == 1){
+            //Boolean value
+            doc["UPS"][data.getName()] = data.getValue() == 0 ? false : true;
+        }else{
+            doc["UPS"][data.getName()] = data.getValue();
         }
     }
 }

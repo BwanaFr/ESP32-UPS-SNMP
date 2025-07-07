@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <esp_log.h>
 #include <ETH.h>
+#include <Configuration.hpp>
 
 static const char* TAG = "SNMP";
 
@@ -86,12 +87,15 @@ void UPSSNMPAgent::loop()
             }else if(!connected && wasConnected_){
                 ESP_LOGI(TAG, "UPS disconnected!");
                 destroyOID();
-
+                //TODO: Check SNMP version
                 upsTrap_->setVersion(SNMP_VERSION_1);
                 upsTrap_->setInform(false);
-                IPAddress destinationIP = IPAddress(128, 141, 116, 145);
-                if(agent_.sendTrapTo(upsTrap_, destinationIP, true, 2, 5000) != INVALID_SNMP_REQUEST_ID){ 
-                    ESP_LOGI(TAG, "Sent SNMP Trap");
+                IPAddress destinationIP;
+                Configuration.getSNMPTrap(destinationIP);
+                if(destinationIP != INADDR_NONE){
+                    if(agent_.sendTrapTo(upsTrap_, destinationIP, true, 2, 5000) != INVALID_SNMP_REQUEST_ID){ 
+                        ESP_LOGI(TAG, "Sent SNMP Trap");
+                    }
                 }
             }
             wasConnected_ = connected;
