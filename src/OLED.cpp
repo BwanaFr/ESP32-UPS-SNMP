@@ -101,39 +101,63 @@ void Display::oledTask(void* param)
     display->display_.cp437(true);         // Use full 256 char 'Code Page 437' font
 
     uint8_t pageNumber = 0;
+    uint32_t nextDelay = 3000;
     for(;;){
         //Show IP and temperature
         display->display_.clearDisplay();
         switch(pageNumber){
             case 0:
-                display->display_.setCursor(0, 0);
-                display->display_.printf("IP: %s", ETH.localIP().toString().c_str());
-                display->display_.setCursor(0, 12);
-                display->display_.printf("Temperature: %.1f C", tempProbe.getTemperature());
-                display->display_.setCursor(0, 24);
-                display->display_.printf("UPS: %s", upsDevice.isConnected() ? "CONNECTED" : "DISCONNECTED");
-                ++pageNumber;
+                {
+                    display->display_.setCursor(0, 0);
+                    display->display_.printf("IP: %s", ETH.localIP().toString().c_str());
+                    display->display_.setCursor(0, 12);
+                    display->display_.printf("Temperature: %.1f C", tempProbe.getTemperature());
+                    display->display_.setCursor(0, 24);
+                    bool upsConnected = upsDevice.isConnected();
+                    display->display_.printf("UPS: %s", upsConnected ? "CONNECTED" : "DISCONNECTED");
+                    if(upsConnected){
+                        ++pageNumber;
+                        nextDelay = 3000;
+                    }else{
+                        nextDelay = 100;
+                    }
+                }
                 break;
             case 1:
-                display->display_.setCursor(0, 0);
-                if(upsDevice.getACPresent().isUsed()){
-                    display->display_.printf("AC : %s", upsDevice.getACPresent().getValue() ? "PRESENT" : "NOT PRESENT");
+                {
+                    display->display_.setCursor(0, 0);
+                    if(upsDevice.getACPresent().isUsed()){
+                        display->display_.printf("AC : %s", upsDevice.getACPresent().getValue() ? "PRESENT" : "NOT PRESENT");
+                    }
+                    display->display_.setCursor(0, 12);
+                    if(upsDevice.getBatteryPresent().isUsed()){
+                        display->display_.printf("Battery : %s", upsDevice.getBatteryPresent().getValue() ? "PRESENT" : "MISSING");
+                    }
+                    display->display_.setCursor(0, 24);
+                    if(upsDevice.getRemainingCapacity().isUsed()){
+                        display->display_.printf("Capacity : %d %%", (int32_t)upsDevice.getRemainingCapacity().getValue());
+                    }
+                    nextDelay = 3000;
+                    // if(upsDevice.getNeedReplacement().isUsed()){
+                    //     ++pageNumber;
+                    // }else{
+                        pageNumber = 0;
+                    // }
                 }
-                display->display_.setCursor(0, 12);
-                if(upsDevice.getBatteryPresent().isUsed()){
-                    display->display_.printf("Battery : %s", upsDevice.getBatteryPresent().getValue() ? "PRESENT" : "MISSING");
-                }
-                display->display_.setCursor(0, 24);
-                if(upsDevice.getRemainingCapacity().isUsed()){
-                    display->display_.printf("Capacity : %d %%", (int32_t)upsDevice.getRemainingCapacity().getValue());
-                }
-                pageNumber = 0;
                 break;
+            // case 2:
+            //     {
+            //         display->display_.setCursor(0, 0);
+            //         display->display_.printf("Battery : %s", upsDevice.getNeedReplacement().getValue() ? "NOT OK" : "OK");
+            //         pageNumber = 0;
+            //         nextDelay = 3000;
+            //     }
+            //     break;
             default:
                 pageNumber = 0;
         }
         display->display_.display();
-        delay(3000);
+        delay(nextDelay);
     }
 
     vTaskSuspend(NULL);
