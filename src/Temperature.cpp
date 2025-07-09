@@ -26,7 +26,7 @@ void TemperatureProbe::begin()
     DeviceAddress sensorDeviceAddress;
     dallas_.begin();
     dallas_.getAddress(sensorDeviceAddress, 0);
-    dallas_.setResolution(sensorDeviceAddress, 9);
+    dallas_.setResolution(sensorDeviceAddress, 11);
 }
 
 double TemperatureProbe::getTemperature()

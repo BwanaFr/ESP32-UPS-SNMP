@@ -234,7 +234,10 @@ esp_err_t Webserver::status_get_handler( httpd_req_t *req )
     // doc["SNMP"]["Trap IP"] = snmpTrap == INADDR_NONE ? "NONE" : snmpTrap.toString();
 
     //Adds temperature reading
-    doc["Temperature"] = tempProbe.getTemperature();
+    double temperature = tempProbe.getTemperature();
+    if(temperature != DEVICE_DISCONNECTED_C){
+        doc["Temperature"] = temperature;
+    }
 
     std::string upsStatusJSON;
     serializeJson(doc, upsStatusJSON);

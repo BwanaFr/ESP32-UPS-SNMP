@@ -4,3 +4,4 @@
 .vscode/launch.json
 .vscode/ipch
 hardware/PCB/esp32-ups-snmp/esp32-ups-snmp-backups/*.zip
+*logo*.hpp

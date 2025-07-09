@@ -23,7 +23,7 @@ void UserLed::begin(){
 
 void UserLed::loop(){
     NewState newState;
-    if(xQueueReceive( newStateQueue_, &newState, pdMS_TO_TICKS(100)) == pdPASS ){
+    if(xQueueReceive( newStateQueue_, &newState, 0) == pdPASS ){
         xSemaphoreTake(semaphore_, portMAX_DELAY);
         state_ = newState.state;
         xSemaphoreGive(semaphore_);

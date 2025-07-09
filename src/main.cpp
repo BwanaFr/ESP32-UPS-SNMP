@@ -12,6 +12,7 @@
 #include "UPSHIDDevice.hpp"
 #include "Configuration.hpp"
 #include "Temperature.hpp"
+#include "OLED.hpp"
 
 //Pins defs for W5500 chip
 #define ETH_MOSI_PIN 11
@@ -121,6 +122,9 @@ void setup()
 
     //Register a listener to know configuration changes
     Configuration.registerListener(configChanged);
+
+    //Starts OLED display
+    display.begin();
 }
 
 void loop()
@@ -130,7 +134,7 @@ void loop()
     static unsigned long lastRGB = 0;
     static float hue = 0.0f;
     userLed.loop();
-    if((now - lastRGB) >= 20){
+    if((now - lastRGB) >= 100){
         userLed.customHSV(hue, 1.0, 0.2);
         hue += 10;
         if(hue > 360){
