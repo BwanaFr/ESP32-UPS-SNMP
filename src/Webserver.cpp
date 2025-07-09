@@ -8,6 +8,7 @@
 #include <esp_partition.h>
 #include <Configuration.hpp>
 #include <UPSHIDDevice.hpp>
+#include <Temperature.hpp>
 
 #define DEVICE_NAME "ESP32"
 #define HTTPD_401   "401 UNAUTHORIZED"           /*!< HTTP Response 401 */
@@ -170,8 +171,39 @@ esp_err_t Webserver::cfg_get_handler( httpd_req_t *req )
 
 esp_err_t Webserver::cfg_post_handler( httpd_req_t *req )
 {
-    //TODO: Handle
-    return ESP_FAIL;
+    Webserver* instance = static_cast<Webserver*>(req->user_ctx);
+    if(instance->checkAuthentication(req)){
+        size_t dataSize = std::min((size_t)512, req->content_len);
+        std::string content;
+        content.resize(dataSize);
+        int ret = httpd_req_recv(req, &content[0], dataSize);
+        if (ret <= 0) {  /* 0 return value indicates connection closed */
+            /* Check if timeout occurred */
+            if (ret == HTTPD_SOCK_ERR_TIMEOUT) {
+                /* In case of timeout one can choose to retry calling
+                * httpd_req_recv(), but to keep it simple, here we
+                * respond with an HTTP 408 (Request Timeout) error */
+                httpd_resp_send_408(req);
+            }
+            /* In case of error, returning ESP_FAIL will
+            * ensure that the underlying socket is closed */
+            return ESP_FAIL;
+        }
+        ESP_LOGI(TAG, "JSON (%u) : %s", dataSize, content.c_str());
+        JsonDocument doc;
+        DeserializationError error = deserializeJson(doc, content);
+        if(error){
+            httpd_resp_set_status( req, HTTPD_500 );    // Assume failure
+            httpd_resp_send( req, "JSON parse failure", HTTPD_RESP_USE_STRLEN );
+            return ESP_OK;
+        }
+        Configuration.fromJSON(doc);
+
+        /* Send a simple response */
+        const char resp[] = "Configuration updated";
+        httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+    }
+    return ESP_OK;
 }
 
 esp_err_t Webserver::status_get_handler( httpd_req_t *req )
@@ -186,19 +218,23 @@ esp_err_t Webserver::status_get_handler( httpd_req_t *req )
     //Sets UPS status to JSON file
     upsDevice.statusToJSON(doc);
 
-    //Adds some info from the configuration
-    std::string devName;
-    Configuration.getDeviceName(devName);
-    doc["Network"]["Name"] = devName;
-    IPAddress ipAddress, subnet, gateway;
-    Configuration.getIPAddress(ipAddress, subnet, gateway);
-    doc["Network"]["IP"] = ipAddress == INADDR_NONE ? "DHCP" : ipAddress.toString();
-    doc["Network"]["Subnet"] = subnet == INADDR_NONE ? "DHCP" : subnet.toString();
-    doc["Network"]["Gateway"] = gateway == INADDR_NONE ? "DHCP" : gateway.toString();
+    // //Adds some info from the configuration
+    // std::string devName;
+    // Configuration.getDeviceName(devName);
+    // doc["Network"]["Name"] = devName;
+    // IPAddress ipAddress, subnet, gateway;
+    // Configuration.getIPAddress(ipAddress, subnet, gateway);
+    // doc["Network"]["IP"] = ipAddress == INADDR_NONE ? "DHCP" : ipAddress.toString();
+    // doc["Network"]["Subnet"] = subnet == INADDR_NONE ? "DHCP" : subnet.toString();
+    // doc["Network"]["Gateway"] = gateway == INADDR_NONE ? "DHCP" : gateway.toString();
 
-    IPAddress snmpTrap;
-    Configuration.getSNMPTrap(snmpTrap);
-    doc["SNMP"]["Trap IP"] = snmpTrap == INADDR_NONE ? "NONE" : snmpTrap.toString();
+    // //Sets SNMP trap
+    // IPAddress snmpTrap;
+    // Configuration.getSNMPTrap(snmpTrap);
+    // doc["SNMP"]["Trap IP"] = snmpTrap == INADDR_NONE ? "NONE" : snmpTrap.toString();
+
+    //Adds temperature reading
+    doc["Temperature"] = tempProbe.getTemperature();
 
     std::string upsStatusJSON;
     serializeJson(doc, upsStatusJSON);
@@ -245,6 +281,15 @@ void Webserver::start()
                 .user_ctx  = this,
             };
             httpd_register_uri_handler(server_, &cfg_get);
+
+            httpd_uri_t cfg_post =
+            {
+                .uri       = "/config",
+                .method    = HTTP_POST,
+                .handler   = cfg_post_handler,
+                .user_ctx  = this,
+            };
+            httpd_register_uri_handler(server_, &cfg_post);
 
             //Status
             httpd_uri_t status_get =

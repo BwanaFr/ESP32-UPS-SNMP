@@ -11,6 +11,7 @@
 #include "UPSSNMP.hpp"
 #include "UPSHIDDevice.hpp"
 #include "Configuration.hpp"
+#include "Temperature.hpp"
 
 //Pins defs for W5500 chip
 #define ETH_MOSI_PIN 11
@@ -88,6 +89,8 @@ void setup()
     Configuration.begin();
     //Loads configuration from flash (Default used if flash empty)
     Configuration.load();
+    //Starts Dallas probe
+    tempProbe.begin();
 
     //Starts Ethernet
     WiFi.onEvent(WiFiEvent);
@@ -138,4 +141,5 @@ void loop()
 #endif
     snmpAgent.loop();
     Configuration.loop();
+    tempProbe.loop();
 }

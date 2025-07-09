@@ -298,6 +298,7 @@ static void action_interrupt_get_report(class_driver_t *driver_obj)
     esp_err_t result = usb_host_transfer_submit(transfer);
     if (result != ESP_OK) {
         ESP_LOGW("", "attempting %s\n", esp_err_to_name(result));
+        driver_obj->actions = ACTION_CLOSE_DEV;
     } else {
         // event queued, transfer_cb2 must be called eventually, clean actions flag
         driver_obj->actions &= ~ACTION_TRANSFER_INTR_GET_REPORT;

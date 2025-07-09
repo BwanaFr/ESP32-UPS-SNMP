@@ -95,6 +95,17 @@ void DeviceConfiguration::fromJSON(const JsonDocument& doc)
     if(doc["Temperature_max"]){
         setTemperatureAlarm(doc["Temperature_max"]);
     }
+
+    if(doc["SNMP_trap"]){
+        String trapStr = doc["SNMP_trap"].as<String>();
+        IPAddress snmpTrap;
+        if(trapStr.length() > 0){
+            snmpTrap.fromString(trapStr);
+        }else{
+            snmpTrap = INADDR_NONE;
+        }
+        setSNMPTrap(snmpTrap);
+    }
 }
 
 void DeviceConfiguration::setDeviceName(const std::string& name)

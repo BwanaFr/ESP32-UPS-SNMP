@@ -144,6 +144,20 @@ void HIDData::reset()
     }
 }
 
+bool HIDData::isBool() const
+{
+    if(bitWidth_ == 1){
+        return true;
+    }
+    //Assume a value between 1 and 0 to be boolean
+    if(logicalMinimum_ && (logicalMinimum_.getValue() == 0) && 
+        logicalMaximum_ && (logicalMaximum_.getValue() == 1)){
+            return true;
+    }
+
+    return false;
+}
+
 UPSHIDDevice::UPSHIDDevice() : 
     datas_{
         //List what can be interresting
@@ -208,6 +222,7 @@ void UPSHIDDevice::buildFromHIDReport(const uint8_t* data, size_t dataLen)
 void UPSHIDDevice::hidReportData(const uint8_t* data, size_t len)
 {
     uint8_t reportID = data[0];
+    // ESP_LOGI(TAG, "Got Report ID : %u", reportID);
     //Got trough interresting data to check if the Id report match
     for(int j=0;j<sizeof(datas_)/sizeof(HIDData);++j){
         if(reportID == datas_[j].getReportId()){
@@ -529,7 +544,7 @@ void UPSHIDDevice::statusToJSONString(std::string& str) const
 void UPSHIDDevice::addToJSON(const HIDData& data, JsonDocument& doc)
 {
     if(data.isUsed()){
-        if(data.getBitWidth() == 1){
+        if(data.isBool()){
             //Boolean value
             doc["UPS"][data.getName()] = data.getValue() == 0 ? false : true;
         }else{

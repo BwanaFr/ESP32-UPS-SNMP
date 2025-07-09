@@ -97,6 +97,12 @@ public:
      * Gets number of bits representing this data
      */
     inline uint8_t getBitWidth() const { return bitWidth_; }
+
+    /**
+     * Gets if data is bool
+     */
+    bool isBool() const;
+
 private:
     uint8_t usagePage_;
     uint8_t usage_;

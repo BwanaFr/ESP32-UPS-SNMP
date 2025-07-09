@@ -15,11 +15,11 @@ public:
         set_ = true;
     }
 
-    operator bool() {
+    operator bool() const {
         return set_;
     }
 
-    inline T getValue(){
+    inline T getValue() const {
         return value_;
     }
 
