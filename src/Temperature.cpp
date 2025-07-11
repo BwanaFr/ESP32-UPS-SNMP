@@ -13,8 +13,12 @@ static const char *TAG = "TempProbe";
 #define TEMP_READ_PERIOD 500
 #endif
 
+#ifndef TEMP_FAILURE_MAX
+#define TEMP_FAILURE_MAX 5
+#endif
+
 TemperatureProbe::TemperatureProbe(uint8_t pin) : 
-    wire_(pin), dallas_(&wire_), temperature_(0.0)
+    wire_(pin), dallas_(&wire_), temperature_(0.0), failureCount_(0)
 {
     mutexData_ = xSemaphoreCreateMutex();
     if(mutexData_ == NULL){
@@ -46,9 +50,22 @@ void TemperatureProbe::readTemperature()
 {
     for(;;){
         dallas_.requestTemperatures(); 
+        float tempRead = dallas_.getTempCByIndex(0);
+        if(tempRead == DEVICE_DISCONNECTED_C){
+            if(failureCount_ < TEMP_FAILURE_MAX){
+                ++failureCount_;
+            }
+        }else{
+            failureCount_ = 0;
+        }
         if(xSemaphoreTake(mutexData_, portMAX_DELAY ) == pdTRUE)
         {
-            temperature_ = dallas_.getTempCByIndex(0);
+            if(failureCount_ < TEMP_FAILURE_MAX){
+                //Read ok
+                temperature_ = tempRead;
+            }else{
+                temperature_ = DEVICE_DISCONNECTED_C;
+            }
             xSemaphoreGive(mutexData_);
         }
         delay(500);

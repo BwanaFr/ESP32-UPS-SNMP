@@ -519,7 +519,7 @@ void UPSHIDDevice::getStringDescriptor(const usb_str_desc_t *str_desc, std::stri
 void UPSHIDDevice::statusToJSON(JsonDocument& doc) const
 {
     if(isConnected()){
-        doc["UPS"]["status"] = "online";
+        doc["UPS"]["status"] = "connected";
         addToJSON(getRemainingCapacity(), doc);
         addToJSON(getACPresent(), doc);
         addToJSON(getCharging(), doc);
@@ -530,7 +530,7 @@ void UPSHIDDevice::statusToJSON(JsonDocument& doc) const
         doc["UPS"]["model"] = getModel();
         doc["UPS"]["serial"] = getSerial();
     }else{
-        doc["status"] = "offline";
+        doc["UPS"]["status"] = "disconnected";
     }
 }
 

@@ -6,17 +6,29 @@
 #include "mbedtls/aes.h"
 #include "mbedtls/cipher.h"
 
+#include <DevicePins.hpp>
+
+#define DEFAULT_DEVICE_NAME "UPS-SNMP"
 #define DEFAULT_TEMPERATURE_ALARM 65.0
-#define FLASH_SAVE_DELAY 1000
+#define DEFAULT_IP "10.10.10.200"
+#define DEFAULT_SUBNET "255.255.255.0"
+#define DEFAULT_GATEWAY "10.10.10.1"
+
+#define FLASH_SAVE_DELAY 2000
 #define CFG_FILENAME "/config.json"
+
+#define USER_BTN_PRESS_TIME 15000
 
 static const char* TAG = "Configuration";
 
 DeviceConfiguration Configuration;
 
-DeviceConfiguration::DeviceConfiguration() : 
+DeviceConfiguration::DeviceConfiguration() :
+        deviceName_(DEFAULT_DEVICE_NAME),
         lastChange_(0), tempAlarm_(DEFAULT_TEMPERATURE_ALARM),
-        ip_(INADDR_NONE), subnet_(INADDR_NONE), gateway_(INADDR_NONE)
+        ip_(DEFAULT_IP), subnet_(DEFAULT_SUBNET), gateway_(DEFAULT_GATEWAY),
+        snmpTrap_(INADDR_NONE), lastButton_(false), lastPress_(0),
+        cfgReset_(false)
 {
     mutexData_ = xSemaphoreCreateMutex();
     if(mutexData_ == NULL){
@@ -234,6 +246,24 @@ void DeviceConfiguration::loop()
     if(doWrite){
         write();
     }
+
+    //Reset configuration by long press
+    bool btnState = digitalRead(USER_BUTTON_PIN);
+    if(!btnState && lastButton_){
+        lastPress_ = now;
+        cfgReset_ = false;
+    }else if(!btnState){
+        //Button pressed
+        if(!cfgReset_){
+            now = millis();
+            if((now - lastPress_) > USER_BTN_PRESS_TIME){
+                ESP_LOGI(TAG, "Reseting to default values (%ums)", now);
+                resetToDefault();
+                cfgReset_ = true;
+            }
+        }
+    }
+    lastButton_ = btnState;
 }
 
 /**
@@ -410,4 +440,13 @@ void DeviceConfiguration::getPassword(std::string& password)
         }
         xSemaphoreGive(mutexData_);
     }
+}
+
+void DeviceConfiguration::resetToDefault()
+{
+    setDeviceName(DEFAULT_DEVICE_NAME);
+    setIPAddress(DEFAULT_IP, DEFAULT_SUBNET, DEFAULT_GATEWAY);
+    setUserName("");
+    setPassword("");
+    setTemperatureAlarm(DEFAULT_TEMPERATURE_ALARM);
 }

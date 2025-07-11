@@ -138,6 +138,11 @@ public:
      */
     void getPassword(std::string& password);
 
+    /**
+     * Resets configuration to default value
+     */
+    void resetToDefault();
+
 private:
     unsigned long lastChange_;                  //!< Last change of one setting
     double tempAlarm_;                          //!< Temperature alarm
@@ -150,6 +155,9 @@ private:
     IPAddress subnet_;                          //!< Device Subnet if static IP
     IPAddress gateway_;                         //!< Next gateway if static IP
     IPAddress snmpTrap_;                        //!< SNMP trap IP address
+    bool lastButton_;                           //!< Last button state
+    bool cfgReset_;                             //!< Configuration reseted
+    unsigned long lastPress_;                   //!< Last button press
     std::vector<ParameterListener> listeners_;  //!< Configuration listeners_
 
     void notifyListeners(Parameter changed);

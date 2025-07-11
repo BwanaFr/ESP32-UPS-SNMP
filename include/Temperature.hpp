@@ -18,6 +18,7 @@ private:
     DallasTemperature dallas_;
     double temperature_;
     SemaphoreHandle_t mutexData_;
+    uint32_t failureCount_;
     void readTemperature();
     static void temperatureTask(void* param);
 };

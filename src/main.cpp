@@ -14,18 +14,13 @@
 #include "Temperature.hpp"
 #include "OLED.hpp"
 
-//Pins defs for W5500 chip
-#define ETH_MOSI_PIN 11
-#define ETH_MISO_PIN 12
-#define ETH_SCLK_PIN 13
-#define ETH_CS_PIN 14
-#define ETH_INT_PIN 10
-#define ETH_RST_PIN 9
+#include "DevicePins.hpp"
 
 #ifdef RGB_LED_PIN
 #include <UserLed.hpp>
 static UserLed userLed;
 #endif
+
 
 UPSSNMPAgent snmpAgent;
 
@@ -39,10 +34,22 @@ void configChanged(DeviceConfiguration::Parameter what)
 {
     switch(what){
         case DeviceConfiguration::Parameter::DEVICE_NAME:
+        {
             std::string deviceName;
             Configuration.getDeviceName(deviceName);
             ETH.setHostname(deviceName.c_str());
             ESP_LOGI(TAG, "New device name! %s", deviceName.c_str());
+            break;
+        }
+        case DeviceConfiguration::Parameter::IP_CONFIGURATION:
+        {
+            IPAddress ip, subnet, gateway;
+            Configuration.getIPAddress(ip, subnet, gateway);
+            ETH.config(ip, gateway, subnet);
+            ESP_LOGI(TAG, "IP configuration changed!");
+            break;
+        }
+        //TODO: Implement other changes
     }
 }
 
@@ -86,6 +93,9 @@ void setup()
     //Starts serial
     Serial.begin(115200);
     
+    //User button
+    pinMode(USER_BUTTON_PIN, INPUT_PULLUP);
+
     //Initializes configuration
     Configuration.begin();
     //Loads configuration from flash (Default used if flash empty)

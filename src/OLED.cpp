@@ -8,19 +8,14 @@
 #include <ETH.h>
 #include <Temperature.hpp>
 #include <UPSHIDDevice.hpp>
+#include <DevicePins.hpp>
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 32 // OLED display height, in pixels
 #define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
 #define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
 
-#ifndef SDA_PIN
-#define SDA_PIN 16
-#endif
 
-#ifndef SCL_PIN
-#define SCL_PIN 17
-#endif
 
 LogoAnimation::LogoAnimation() : step_(0)
 {
@@ -79,7 +74,6 @@ void Display::begin()
         2, NULL
     );
 }
-    
 
 void Display::oledTask(void* param)
 {
@@ -111,7 +105,12 @@ void Display::oledTask(void* param)
                     display->display_.setCursor(0, 0);
                     display->display_.printf("IP: %s", ETH.localIP().toString().c_str());
                     display->display_.setCursor(0, 12);
-                    display->display_.printf("Temperature: %.1f C", tempProbe.getTemperature());
+                    double temperature = tempProbe.getTemperature();
+                    if(temperature != DEVICE_DISCONNECTED_C){
+                        display->display_.printf("Temperature: %.1f C", temperature);
+                    }else{
+                        display->display_.printf("Temperature: -- C");
+                    }
                     display->display_.setCursor(0, 24);
                     bool upsConnected = upsDevice.isConnected();
                     display->display_.printf("UPS: %s", upsConnected ? "CONNECTED" : "DISCONNECTED");
@@ -143,14 +142,28 @@ void Display::oledTask(void* param)
                 break;
            default:
                 pageNumber = 0;
+                nextDelay = 0;
+                break;
         }
         if(nextDelay > 0){
             display->display_.display();
-            delay(nextDelay);
+            unsigned long elapsed = 0;
+            bool lastButtton = digitalRead(USER_BUTTON_PIN);
+            while(elapsed < nextDelay){
+                delay(20);
+                elapsed += 20;
+                //Failling edge detection
+                bool btnState = digitalRead(USER_BUTTON_PIN);
+                if(lastButtton && !btnState){
+                    //Display next page
+                    break;
+                }
+                lastButtton = btnState;
+            }
         }
     }
 
     vTaskSuspend(NULL);
 }
 
-Display display(SCL_PIN, SDA_PIN);
+Display display(SCL_OLED_PIN, SDA_OLED_PIN);
