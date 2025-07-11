@@ -137,27 +137,17 @@ void Display::oledTask(void* param)
                     if(upsDevice.getRemainingCapacity().isUsed()){
                         display->display_.printf("Capacity : %d %%", (int32_t)upsDevice.getRemainingCapacity().getValue());
                     }
-                    nextDelay = 3000;
-                    // if(upsDevice.getNeedReplacement().isUsed()){
-                    //     ++pageNumber;
-                    // }else{
-                        pageNumber = 0;
-                    // }
+                    nextDelay = upsDevice.isConnected() ? 3000 : 0;
+                    pageNumber = 0;
                 }
                 break;
-            // case 2:
-            //     {
-            //         display->display_.setCursor(0, 0);
-            //         display->display_.printf("Battery : %s", upsDevice.getNeedReplacement().getValue() ? "NOT OK" : "OK");
-            //         pageNumber = 0;
-            //         nextDelay = 3000;
-            //     }
-            //     break;
-            default:
+           default:
                 pageNumber = 0;
         }
-        display->display_.display();
-        delay(nextDelay);
+        if(nextDelay > 0){
+            display->display_.display();
+            delay(nextDelay);
+        }
     }
 
     vTaskSuspend(NULL);

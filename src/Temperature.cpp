@@ -1,6 +1,7 @@
 #include <Temperature.hpp>
 
 #include "esp_log.h"
+#include <FreeRTOS.h>
 
 static const char *TAG = "TempProbe";
 
@@ -13,7 +14,7 @@ static const char *TAG = "TempProbe";
 #endif
 
 TemperatureProbe::TemperatureProbe(uint8_t pin) : 
-    wire_(pin), dallas_(&wire_), temperature_(0.0), lastRead_(0)
+    wire_(pin), dallas_(&wire_), temperature_(0.0)
 {
     mutexData_ = xSemaphoreCreateMutex();
     if(mutexData_ == NULL){
@@ -26,7 +27,8 @@ void TemperatureProbe::begin()
     DeviceAddress sensorDeviceAddress;
     dallas_.begin();
     dallas_.getAddress(sensorDeviceAddress, 0);
-    dallas_.setResolution(sensorDeviceAddress, 11);
+    dallas_.setResolution(sensorDeviceAddress, 10);
+    xTaskCreate(temperatureTask, "tempTask", 2048, (void*)this,  0, NULL);
 }
 
 double TemperatureProbe::getTemperature()
@@ -36,24 +38,27 @@ double TemperatureProbe::getTemperature()
     {
         ret = temperature_;
         xSemaphoreGive(mutexData_);
-    }
-    dallas_.requestTemperatures(); 
-    float temp = dallas_.getTempCByIndex(0);
+    }    
     return ret;
 }
 
-void TemperatureProbe::loop()
+void TemperatureProbe::readTemperature()
 {
-    unsigned long now = millis();
-    if((now - lastRead_) >= TEMP_READ_PERIOD){
+    for(;;){
         dallas_.requestTemperatures(); 
         if(xSemaphoreTake(mutexData_, portMAX_DELAY ) == pdTRUE)
         {
             temperature_ = dallas_.getTempCByIndex(0);
             xSemaphoreGive(mutexData_);
         }
-        lastRead_ = now;
+        delay(500);
     }
+}
+
+void TemperatureProbe::temperatureTask(void* param)
+{
+    TemperatureProbe* app = static_cast<TemperatureProbe*>(param);
+    app->readTemperature();
 }
 
 TemperatureProbe tempProbe(TEMP_PROBE_PIN);

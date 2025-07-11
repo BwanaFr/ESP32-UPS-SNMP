@@ -145,5 +145,4 @@ void loop()
 #endif
     snmpAgent.loop();
     Configuration.loop();
-    tempProbe.loop();
 }
