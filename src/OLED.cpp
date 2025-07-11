@@ -15,7 +15,7 @@
 #define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
 #define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
 
-
+static const char* TAG = "OLED";
 
 LogoAnimation::LogoAnimation() : step_(0)
 {
@@ -90,16 +90,20 @@ void Display::oledTask(void* param)
     LogoAnimation animation;
     while(animation.animate(display->display_)){};
     delay(3000);
-    display->display_.setTextSize(1);      // Normal 1:1 pixel scale
+    display->display_.setTextSize(1);       // Normal 1:1 pixel scale
     display->display_.setTextColor(SSD1306_WHITE); // Draw white text
-    display->display_.cp437(true);         // Use full 256 char 'Code Page 437' font
+    display->display_.cp437(true);          // Use full 256 char 'Code Page 437' font
 
-    uint8_t pageNumber = 0;
-    uint32_t nextDelay = 3000;
+    uint8_t actualPage = 0;                 //Actual displayed page
+    uint8_t nextPage = 0;                   //Next page to be displayed
+    uint32_t lastPageChange = millis();     //Last page change timestamp
+    uint32_t pageDelay = 3000;              //Page display duration
+    bool lastButton = false;                //Last button press
+    bool btnPressed = false;                //Button was pressed
     for(;;){
         //Show IP and temperature
         display->display_.clearDisplay();
-        switch(pageNumber){
+        switch(actualPage){
             case 0:
                 {
                     display->display_.setCursor(0, 0);
@@ -114,11 +118,11 @@ void Display::oledTask(void* param)
                     display->display_.setCursor(0, 24);
                     bool upsConnected = upsDevice.isConnected();
                     display->display_.printf("UPS: %s", upsConnected ? "CONNECTED" : "DISCONNECTED");
+                    pageDelay = 3000;
                     if(upsConnected){
-                        ++pageNumber;
-                        nextDelay = 3000;
+                        nextPage = 1;
                     }else{
-                        nextDelay = 100;
+                        nextPage = actualPage;
                     }
                 }
                 break;
@@ -136,31 +140,46 @@ void Display::oledTask(void* param)
                     if(upsDevice.getRemainingCapacity().isUsed()){
                         display->display_.printf("Capacity : %d %%", (int32_t)upsDevice.getRemainingCapacity().getValue());
                     }
-                    nextDelay = upsDevice.isConnected() ? 3000 : 0;
-                    pageNumber = 0;
+                    if(!upsDevice.isConnected()){
+                        pageDelay = 0;
+                    }else{
+                        pageDelay = 3000;
+                    }
+                    nextPage = 0;
                 }
                 break;
            default:
-                pageNumber = 0;
-                nextDelay = 0;
+                nextPage = 0;
+                pageDelay = 0;
                 break;
         }
-        if(nextDelay > 0){
+        //Update screen (only if need to display page)
+        if(pageDelay > 0){
             display->display_.display();
-            unsigned long elapsed = 0;
-            bool lastButtton = digitalRead(USER_BUTTON_PIN);
-            while(elapsed < nextDelay){
-                delay(20);
-                elapsed += 20;
-                //Failling edge detection
-                bool btnState = digitalRead(USER_BUTTON_PIN);
-                if(lastButtton && !btnState){
-                    //Display next page
-                    break;
-                }
-                lastButtton = btnState;
-            }
         }
+
+        unsigned long now = millis();
+        
+        //Button for switching page
+        bool btnState = digitalRead(USER_BUTTON_PIN);        
+        bool btnEdge = (!btnState && lastButton);
+        if(btnPressed){
+            pageDelay = 10000;
+        }
+        if(((now - lastPageChange) > pageDelay) || btnEdge){
+            lastPageChange = now;
+            actualPage = nextPage;            
+            if(btnEdge){
+                btnPressed = true;
+            }else{
+                btnPressed = false;
+            }
+        }else{
+            //Refresh every 50ms
+            delay(50);
+        }
+        lastButton = btnState;
+        
     }
 
     vTaskSuspend(NULL);

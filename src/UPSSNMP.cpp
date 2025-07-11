@@ -5,6 +5,7 @@
 #include <esp_log.h>
 #include <ETH.h>
 #include <Configuration.hpp>
+#include <Temperature.hpp>
 
 static const char* TAG = "SNMP";
 
@@ -35,11 +36,16 @@ void UPSSNMPAgent::start()
             agent_.addDynamicReadOnlyStringHandler(".1.3.6.1.2.1.47.1.1.1.1.11", []()->const std::string{ return ETH.macAddress().c_str(); });
             // sysUpTime 
             timestampCallback_ = (TimestampCallback*)agent_.addDynamicReadOnlyTimestampHandler(".1.3.6.1.2.1.1.3", []()->uint32_t{
-                return static_cast<uint32_t>(millis()/100);
+                return static_cast<uint32_t>(millis()/10);
             });
             //hrSystemUptime
             agent_.addDynamicReadOnlyTimestampHandler(".1.3.6.1.2.1.25.1.1", []()->uint32_t{
-                return static_cast<uint32_t>(millis()/100);
+                return static_cast<uint32_t>(millis()/10);
+            });
+
+            //Temperature
+            agent_.addDynamicIntegerHandler(".1.3.6.1.4.1.119.5.1.2.1.5.1", []()->int{
+                return tempProbe.getTemperature() * 10.0;
             });
 
             upsTrap_ = new SNMPTrap("public", SNMP_VERSION_2C);
