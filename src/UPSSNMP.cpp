@@ -113,18 +113,24 @@ void UPSSNMPAgent::initializeOID()
 {
     //upsEstimatedChargeRemaining OID
     if(upsDevice.getRemainingCapacity().isUsed()){
-        callbacks_.push_back(agent_.addDynamicIntegerHandler("1.3.6.1.2.1.33.1.2.4", []()->int{
+        callbacks_.push_back(agent_.addDynamicIntegerHandler(".1.3.6.1.2.1.33.1.2.4", []()->int{
             return static_cast<int32_t>(upsDevice.getRemainingCapacity().getValue());
         }));
     }
 
     //upsEstimatedMinutesRemaining OID
     if(upsDevice.getRuntimeToEmpty().isUsed()){
-        callbacks_.push_back(agent_.addDynamicIntegerHandler("1.3.6.1.2.1.33.1.2.3", []()->int{
+        callbacks_.push_back(agent_.addDynamicIntegerHandler(".1.3.6.1.2.1.33.1.2.3", []()->int{
             return static_cast<int32_t>(upsDevice.getRuntimeToEmpty().getValue()/60);   //Convert seconds to minutes
         }));
     }
  
+    if(upsDevice.getACPresent().isUsed()){
+        callbacks_.push_back(agent_.addDynamicIntegerHandler(".1.3.6.1.2.1.33.1.2.4", []()->int{
+            return static_cast<int32_t>(upsDevice.getACPresent().getValue());   //Convert seconds to minutes
+        }));
+    }
+
     agent_.sortHandlers();
 }
 
