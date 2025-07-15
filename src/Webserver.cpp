@@ -232,13 +232,16 @@ esp_err_t Webserver::status_get_handler( httpd_req_t *req )
     // IPAddress snmpTrap;
     // Configuration.getSNMPTrap(snmpTrap);
     // doc["SNMP"]["Trap IP"] = snmpTrap == INADDR_NONE ? "NONE" : snmpTrap.toString();
-
+#ifndef NO_TEMP_PROBE
     //Adds temperature reading
     double temperature = tempProbe.getTemperature();
     if(temperature != DEVICE_DISCONNECTED_C){
         doc["Temperature"] = temperature;
     }
-
+#endif
+    float internalTemp = tempProbe.getInternalTemperature();
+    doc["cpuTemperature"] = internalTemp;
+    
     std::string upsStatusJSON;
     serializeJson(doc, upsStatusJSON);
     httpd_resp_send( req, upsStatusJSON.c_str(), upsStatusJSON.length());

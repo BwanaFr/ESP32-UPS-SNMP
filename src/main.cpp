@@ -100,9 +100,11 @@ void setup()
     Configuration.begin();
     //Loads configuration from flash (Default used if flash empty)
     Configuration.load();
+
+#ifndef NO_TEMP_PROBE
     //Starts Dallas probe
     tempProbe.begin();
-
+#endif
     //Starts Ethernet
     WiFi.onEvent(WiFiEvent);
     if (!ETH.begin(ETH_PHY_W5500, 1, ETH_CS_PIN, ETH_INT_PIN, ETH_RST_PIN,
@@ -133,8 +135,10 @@ void setup()
     //Register a listener to know configuration changes
     Configuration.registerListener(configChanged);
 
+#ifndef NO_SCREEN
     //Starts OLED display
     display.begin();
+#endif
 }
 
 void loop()

@@ -43,9 +43,17 @@ void UPSSNMPAgent::start()
                 return static_cast<uint32_t>(millis()/10);
             });
 
-            //Temperature
+
+#ifndef NO_TEMP_PROBE
+            //Temperature probe
             agent_.addDynamicIntegerHandler(".1.3.6.1.4.1.119.5.1.2.1.5.1", []()->int{
-                return tempProbe.getTemperature() * 10.0;
+                return tempProbe.getTemperatureProbe() * 10.0;
+            });
+#endif
+            //Core internal temperature
+            //1.3.6.1.2.1.99.1.1.1.4
+            agent_.addDynamicIntegerHandler(".1.3.6.1.2.1.99.1.1.1.4", []()->int{
+                return tempProbe.getInternalTemperature() * 10.0;
             });
 
             upsTrap_ = new SNMPTrap("public", SNMP_VERSION_2C);
@@ -126,7 +134,7 @@ void UPSSNMPAgent::initializeOID()
     }
  
     if(upsDevice.getACPresent().isUsed()){
-        callbacks_.push_back(agent_.addDynamicIntegerHandler(".1.3.6.1.2.1.33.1.2.4", []()->int{
+        callbacks_.push_back(agent_.addDynamicIntegerHandler(".1.3.6.1.2.1.33.1.2.5", []()->int{
             return static_cast<int32_t>(upsDevice.getACPresent().getValue());   //Convert seconds to minutes
         }));
     }

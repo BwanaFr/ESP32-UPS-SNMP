@@ -1,3 +1,5 @@
+#ifndef NO_SCREEN
+
 #include <OLED.hpp>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
@@ -186,3 +188,5 @@ void Display::oledTask(void* param)
 }
 
 Display display(SCL_OLED_PIN, SDA_OLED_PIN);
+
+#endif //NO_SCREEN

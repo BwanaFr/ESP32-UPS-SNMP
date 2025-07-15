@@ -1,6 +1,7 @@
 #ifndef _OLED_HPP__
 #define _OLED_HPP__
 
+#ifndef NO_SCREEN
 #include <Arduino.h>
 #include <Adafruit_SSD1306.h>
 
@@ -28,4 +29,5 @@ private:
 
 extern Display display;
 
+#endif  //NO_SCREEN
 #endif
