@@ -19,18 +19,16 @@ static const char *TAG = "TempProbe";
 
 #ifndef NO_TEMP_PROBE
 TemperatureProbe::TemperatureProbe(uint8_t pin) : 
-    wire_(pin), dallas_(&wire_), temperature_(0.0), failureCount_(0)
+    wire_(pin), dallas_(&wire_), temperature_(0.0), failureCount_(0),
+    internalTemperature_(0.0f), tempHandle(NULL)
 #else
 TemperatureProbe::TemperatureProbe(uint8_t pin) : 
-    temperature_(0.0), failureCount_(0)
+    temperature_(0.0), failureCount_(0), internalTemperature_(0.0f),
+    tempHandle(NULL)
 #endif
 {
-    temperature_sensor_config_t temp_sensor = {
-            .range_min = -10,
-            .range_max = 80,
-        };
+    temperature_sensor_config_t temp_sensor = TEMPERATURE_SENSOR_CONFIG_DEFAULT(20, 100);
     temperature_sensor_install(&temp_sensor, &tempHandle);
-    temperature_sensor_enable(tempHandle);
 
     mutexData_ = xSemaphoreCreateMutex();
     if(mutexData_ == NULL){
@@ -88,8 +86,10 @@ void TemperatureProbe::readTemperature()
         }
 #endif
         //Read internal temperature
+        temperature_sensor_enable(tempHandle);
         float intTemp = 0.0;
         temperature_sensor_get_celsius(tempHandle, &intTemp);
+        temperature_sensor_disable(tempHandle);
         if(xSemaphoreTake(mutexData_, portMAX_DELAY ) == pdTRUE)
         {
 #ifndef NO_TEMP_PROBE

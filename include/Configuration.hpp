@@ -20,6 +20,7 @@ public:
         TEMPERATURE_ALARM,
         LOGIN_USER,
         LOGIN_PASS,
+        MAC_ADDRESS
     };
 
     DeviceConfiguration();
@@ -85,6 +86,16 @@ public:
      * Gets temperature alarm threshold
      */
     double getTemperatureAlarm();
+
+    /**
+     * Gets the MAC address
+     */
+    void getMACAddress(std::string& mac);
+
+    /**
+     * Sets the MAC address
+     */
+    void setMACAddress(const std::string& mac);
 
     /**
      * Loop to delay flash writing
@@ -155,6 +166,7 @@ private:
     IPAddress subnet_;                          //!< Device Subnet if static IP
     IPAddress gateway_;                         //!< Next gateway if static IP
     IPAddress snmpTrap_;                        //!< SNMP trap IP address
+    std::string macAddress_;
     bool lastButton_;                           //!< Last button state
     bool cfgReset_;                             //!< Configuration reseted
     unsigned long lastPress_;                   //!< Last button press

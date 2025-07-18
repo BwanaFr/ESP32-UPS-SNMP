@@ -9,6 +9,7 @@
 #include <Configuration.hpp>
 #include <UPSHIDDevice.hpp>
 #include <Temperature.hpp>
+#include <ETH.h>
 
 #define DEVICE_NAME "ESP32"
 #define HTTPD_401   "401 UNAUTHORIZED"           /*!< HTTP Response 401 */
@@ -239,8 +240,8 @@ esp_err_t Webserver::status_get_handler( httpd_req_t *req )
         doc["Temperature"] = temperature;
     }
 #endif
-    float internalTemp = tempProbe.getInternalTemperature();
-    doc["cpuTemperature"] = internalTemp;
+    doc["MAC_address"] = ETH.macAddress();
+    doc["cpuTemperature"] = tempProbe.getInternalTemperature();
     
     std::string upsStatusJSON;
     serializeJson(doc, upsStatusJSON);

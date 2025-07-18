@@ -118,6 +118,22 @@ void DeviceConfiguration::fromJSON(const JsonDocument& doc)
         }
         setSNMPTrap(snmpTrap);
     }
+
+    if(doc["MAC_address"]){
+        std::string mac = doc["MAC_address"].as<std::string>();
+        setMACAddress(mac);
+    }
+}
+
+void DeviceConfiguration::setMACAddress(const std::string& mac)
+{
+    if(xSemaphoreTake(mutexData_, portMAX_DELAY ) == pdTRUE)
+    {
+        macAddress_ = mac;
+        lastChange_ = millis();
+        xSemaphoreGive(mutexData_);
+        notifyListeners(Parameter::MAC_ADDRESS);
+    }  
 }
 
 void DeviceConfiguration::setDeviceName(const std::string& name)
@@ -227,6 +243,15 @@ double DeviceConfiguration::getTemperatureAlarm()
     return ret;
 }
 
+void DeviceConfiguration::getMACAddress(std::string& mac)
+{
+    if(xSemaphoreTake(mutexData_, portMAX_DELAY ) == pdTRUE)
+    {
+        mac = macAddress_;
+        xSemaphoreGive(mutexData_);
+    }
+}
+
 /**
  * Loop to delay flash writing
  */
@@ -289,6 +314,7 @@ void DeviceConfiguration::toJSON(JsonDocument& doc, bool includeLogin)
             doc["Username"] = userName_;
             doc["Password"] = password_;
         }
+        doc["MAC_address"] = macAddress_;
         xSemaphoreGive(mutexData_);
     }
 }
